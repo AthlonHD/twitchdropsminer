@@ -392,6 +392,9 @@
                         <h3 id="system-diagnostics-header">Diagnostics</h3>
                         <p style="font-size:.82rem;color:var(--text-secondary);margin:4px 0 10px">Reporting a bug? Download the log file and attach it — makes it far easier to pin down what happened.</p>
                         <button id="download-logs-btn" class="btn-secondary" style="width:auto;padding:7px 14px;font-size:.85rem">⬇ Download Logs</button>
+                        <button id="dump-diagnostics-btn" class="btn-secondary" type="button" aria-describedby="diagnostics-help" style="width:auto;padding:7px 14px;font-size:.85rem">Dump diagnosis data</button>
+                        <p id="diagnostics-help" style="font-size:.8rem;color:var(--text-secondary);margin:8px 0 0">Saves deidentified miner state and recent sanitized API responses to the diagnostics folder in this account's data directory.</p>
+                        <p id="diagnostics-result" role="status" aria-live="polite" style="font-size:.82rem;margin:6px 0 0"></p>
                     </div>
                     <div class="system-card" id="accounts-card" style="margin-bottom:16px">
                         <h3 id="system-accounts-header">Twitch Accounts</h3>

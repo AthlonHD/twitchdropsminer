@@ -9,12 +9,16 @@ from src.services.watch_service import WatchService
 class _FakeChannel:
     def __init__(self):
         self.online = True
+        self.banned = False
         self.id = 111
         self.name = "some_channel"
         self._login = "some_channel"
-        self._stream = None
+        self._stream = MagicMock(broadcast_id=1)
 
     async def send_watch(self):
+        return True
+
+    def _watch_current(self, stream):
         return True
 
 
@@ -68,7 +72,18 @@ class TestWatchLoopCurrentUserNone(unittest.IsolatedAsyncioTestCase):
         async def _fast_sleep(_delay, *_a, **_kw):
             return await real_sleep(0)
 
-        with patch("asyncio.sleep", new=_fast_sleep):
+        async def _fast_sleep_method(_self, _delay):
+            return await real_sleep(0)
+
+        # monotonic jumps 30s per call so the loop's ~minute progress tick fires at once
+        import itertools
+
+        clock = itertools.count(0, 30)
+        with (
+            patch("asyncio.sleep", new=_fast_sleep),
+            patch("src.services.watch_service.monotonic", side_effect=lambda: next(clock)),
+            patch.object(WatchService, "watch_sleep", new=_fast_sleep_method),
+        ):
             task = asyncio.create_task(service.watch_loop())
             try:
                 for _ in range(200):

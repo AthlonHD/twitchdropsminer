@@ -25,6 +25,8 @@ from src.exceptions import (
     MinerException,
     RequestException,
 )
+from src.config.paths import _ACCOUNT_DATA_DIR
+from src.diagnostics import Diagnostics
 from src.i18n import _
 from src.models.campaign import DropsCampaign
 from src.models.channel import Channel
@@ -61,6 +63,7 @@ gql_logger = logging.getLogger("TwitchDrops.gql")
 class Twitch:
     def __init__(self, settings: Settings):
         self.settings: Settings = settings
+        self.diagnostics = Diagnostics(_ACCOUNT_DATA_DIR)
         # State management
         self._state: State = State.IDLE
         self._state_change = asyncio.Event()
@@ -182,6 +185,8 @@ class Twitch:
         self.channels.clear()
         self.inventory.clear()
         self._auth_state.clear()
+        self._channel_service.clear_bans()
+        self.diagnostics.stop_logs()
         self.wanted_games.clear()
         self._mnt_triggers.clear()
         # wait at least half a second + whatever it takes to complete the closing
@@ -191,6 +196,13 @@ class Twitch:
     def wait_until_login(self) -> abc.Coroutine[Any, Any, Literal[True]]:
         """Wait until the user is logged in."""
         return self._auth_state._logged_in.wait()
+
+    def request_games_update(self) -> bool:
+        """Queue a mining-policy recalculation, only from the idle state."""
+        if self._state is not State.IDLE:
+            return False
+        self.change_state(State.GAMES_UPDATE)
+        return True
 
     def change_state(self, state: State) -> None:
         """Change the current state of the miner."""
@@ -290,14 +302,19 @@ class Twitch:
 
     async def run(self) -> None:
         """Main entry point for the miner - handles exit requests."""
-        while True:
-            try:
-                await self._run()
-                break
-            except ExitRequest:
-                break
-            except aiohttp.ContentTypeError as exc:
-                raise RequestException(_.t["login"]["unexpected_content"]) from exc
+        self.diagnostics.start_logs()
+        try:
+            while True:
+                try:
+                    await self._run()
+                    break
+                except ExitRequest:
+                    break
+                except aiohttp.ContentTypeError as exc:
+                    raise RequestException(_.t["login"]["unexpected_content"]) from exc
+        finally:
+            self._channel_service.clear_bans()
+            self.diagnostics.stop_logs()
 
     async def _run(self) -> None:
         """
@@ -599,11 +616,24 @@ class Twitch:
                         new_channels.update(await self.get_live_streams(game, drops_enabled=True))
                     except Exception as exc:
                         logger.warning(f"Failed to fetch channels for {game.name}: {exc} — skipping")
+                # Filter account-specific bans before priority sorting and the tracking cap.
+                retained_channels = [channel for channel in (
+                    self.watching_channel.get_with_default(None), self._manual_target_channel,
+                ) if channel is not None]
+                unbanned_channels = await self._channel_service.filter_banned_channels(
+                    new_channels, retained_channels=retained_channels,
+                )
+                banned_channels = [channel for channel in (
+                    *new_channels, *retained_channels,
+                ) if channel.banned]
+                self._remove_channel_topics(set(banned_channels))
+                for channel in banned_channels:
+                    channel.remove()
                 # sort them descending by viewers, by priority and by game priority
                 # NOTE: Viewers sort also ensures ONLINE channels are sorted to the top
                 # NOTE: We can drop using the set now, because there's no more channels being added
                 ordered_channels: list[Channel] = sorted(
-                    new_channels, key=ChannelService.get_viewers_key, reverse=True
+                    unbanned_channels, key=ChannelService.get_viewers_key, reverse=True
                 )
                 ordered_channels.sort(key=lambda ch: ch.acl_based, reverse=True)
                 ordered_channels.sort(key=self._channel_service.get_priority)
@@ -669,6 +699,9 @@ class Twitch:
                     no_acl,
                     acl_channels,
                     new_channels,
+                    unbanned_channels,
+                    banned_channels,
+                    retained_channels,
                     to_add_topics,
                     ordered_channels,
                     watching_channel,

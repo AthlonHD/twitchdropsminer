@@ -101,7 +101,8 @@ class TestSpadeWatchEvents(unittest.IsolatedAsyncioTestCase):
         )
         channel._spade_url = "https://spade.twitch.tv/"
 
-        result = await channel.send_watch()
+        with patch.object(Channel, "_watch_current", return_value=True):
+            result = await channel._send_watch_spade()
 
         self.assertTrue(result)
         twitch.request.assert_called_once()
@@ -125,14 +126,14 @@ class TestSpadeWatchEvents(unittest.IsolatedAsyncioTestCase):
         )
         channel._spade_url = "https://spade.twitch.tv/"
 
-        self.assertFalse(await channel.send_watch())
+        self.assertFalse(await channel._send_watch_spade())
 
     async def test_send_watch_returns_false_without_stream(self):
         twitch = MagicMock()
         twitch.gui.channels = MagicMock()
         channel = Channel(twitch, id=67890, login="example_channel")
 
-        self.assertFalse(await channel.send_watch())
+        self.assertFalse(await channel._send_watch_spade())
 
     async def test_send_watch_returns_false_when_request_fails(self):
         twitch = MagicMock()
@@ -149,7 +150,7 @@ class TestSpadeWatchEvents(unittest.IsolatedAsyncioTestCase):
         )
         channel._spade_url = "https://spade.twitch.tv/"
 
-        self.assertFalse(await channel.send_watch())
+        self.assertFalse(await channel._send_watch_spade())
 
     async def test_send_watch_fetches_spade_url_when_missing(self):
         twitch = MagicMock()
@@ -167,7 +168,11 @@ class TestSpadeWatchEvents(unittest.IsolatedAsyncioTestCase):
         channel._spade_url = None
         fetch_mock = AsyncMock(return_value="https://spade.twitch.tv/fetched")
 
-        with patch.object(Channel, "get_spade_url", fetch_mock):
+        with (
+            patch.object(Channel, "get_spade_url", fetch_mock),
+            patch.object(Channel, "_send_watch_playlist", AsyncMock(return_value=True)),
+            patch.object(Channel, "_watch_current", return_value=True),
+        ):
             result = await channel.send_watch()
 
         self.assertTrue(result)

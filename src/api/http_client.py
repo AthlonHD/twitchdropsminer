@@ -187,20 +187,30 @@ class HTTPClient:
 
                 if response.status < 500:
                     # Pre-read the response to avoid getting errors outside the context manager
-                    raw_response = await response.read()  # noqa: F841
+                    raw_response = await response.read()
+                    if (diagnostics := getattr(self._twitch, "diagnostics", None)) is not None:
+                        diagnostics.record_http(method, url, response.status,
+                                                body=raw_response, operations=kwargs.get("json"))
                     yield response
                     return
 
+                if (diagnostics := getattr(self._twitch, "diagnostics", None)) is not None:
+                    diagnostics.record_http(method, url, response.status)
                 self.gui.print(_.t["error"]["site_down"].format(seconds=round(delay)))
             except aiohttp.ClientConnectorCertificateError:
                 # SSL verification failures should not be retried
+                if (diagnostics := getattr(self._twitch, "diagnostics", None)) is not None:
+                    diagnostics.record(diagnostics.endpoint(url, method), outcome="tls")
                 raise
             except (
                 aiohttp.ClientConnectionError,
                 asyncio.TimeoutError,
                 aiohttp.ClientPayloadError,
-            ):
+            ) as error:
                 # Connection problems, retry with backoff
+                if (diagnostics := getattr(self._twitch, "diagnostics", None)) is not None:
+                    diagnostics.record(diagnostics.endpoint(url, method),
+                                       outcome="timeout" if isinstance(error, TimeoutError) else "connection")
                 if backoff.steps > 1:
                     # Don't show quick retries to the user
                     self.gui.print(_.t["error"]["no_connection"].format(seconds=round(delay)))

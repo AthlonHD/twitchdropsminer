@@ -202,6 +202,12 @@ class GUISettings(TypedDict):
     mining_benefits_help: str
     reload: str
     reload_campaigns: str
+    dump_diagnostics: str
+    diagnostics_help: str
+    diagnostics_saving: str
+    diagnostics_saved: str
+    diagnostics_error: str
+    diagnostics_busy: str
     games_to_watch: str
     games_help: str
     search_games: str

@@ -10,7 +10,7 @@ from __future__ import annotations
 import asyncio
 import logging
 from contextlib import suppress
-from time import time
+from time import monotonic
 from typing import TYPE_CHECKING, NoReturn
 
 from src.config import CALL, GQL_OPERATIONS, WATCH_INTERVAL, WebsocketTopic
@@ -30,7 +30,7 @@ logger = logging.getLogger("TwitchDrops")
 
 
 async def _send_idle_watch(channel) -> None:
-    if not channel.online:
+    if not channel.online or channel.banned:
         return
     succeeded = await channel.send_watch()
     if succeeded:
@@ -68,6 +68,7 @@ class WatchService:
         A channel can be watched if:
         - There are wanted games configured
         - The channel is online
+        - Twitch has not reported an active ban for the signed-in account
         - Drops are enabled on the channel
         - The channel is streaming a wanted game
         - At least one campaign can be progressed on this channel
@@ -82,7 +83,7 @@ class WatchService:
             return False
 
         # exit early if stream is offline or drops aren't enabled
-        if not channel.online or not channel.drops_enabled:
+        if not channel.online or channel.banned or not channel.drops_enabled:
             return False
 
         # check if we can progress any campaign for the played game
@@ -107,7 +108,7 @@ class WatchService:
             True if we should switch to this channel, False otherwise
         """
         watching_channel = self._twitch.watching_channel.get_with_default(None)
-        if watching_channel is None:
+        if watching_channel is None or watching_channel.banned:
             return True
 
         channel_order = self._twitch._channel_service.get_priority(channel)
@@ -240,9 +241,9 @@ class WatchService:
         Args:
             delay: Time in seconds to sleep
         """
-        self._twitch._watching_restart.clear()
         with suppress(asyncio.TimeoutError):
             await asyncio.wait_for(self._twitch._watching_restart.wait(), timeout=delay)
+        self._twitch._watching_restart.clear()
 
     @task_wrapper(critical=True)
     async def watch_loop(self) -> NoReturn:
@@ -262,24 +263,37 @@ class WatchService:
         """
         interval: float = WATCH_INTERVAL.total_seconds()
         _cp_poll_counter: int = 0
-        _CP_POLL_EVERY: int = 3  # poll every ~3 iterations ≈ 60s
+        _CP_POLL_EVERY: int = 3  # poll every ~3 progress ticks
+        # Twitch only credits watch time for real segment traffic, so the stream is
+        # polled every ~10s (inside the rolling playlist window); everything else
+        # (progress fallback, idle channels, channel points) keeps its ~minute cadence.
+        next_progress = monotonic() + 20
 
         while True:
             channel: Channel = await self._twitch.watching_channel.get()
 
-            if not channel.online:
+            if not channel.online or channel.banned:
                 # if the channel isn't online anymore, we stop watching it
                 self.stop_watching()
                 continue
 
-            # logger.log(CALL, f"Sending watch payload to: {channel.name}")
+            stream = channel._stream
+            started = monotonic()
             succeeded: bool = await channel.send_watch()
-            last_sent: float = time()
 
             if not succeeded:
                 logger.log(CALL, f"Watch requested failed for channel: {channel.name}")
-            else:
-                logger.info(f"Watch sent OK: {channel.name} (broadcast_id={channel._stream.broadcast_id if channel._stream else 'none'})")
+
+            # A ten-second poll fits inside Twitch's rolling segment window.
+            await self.watch_sleep(max(0, 10 - (monotonic() - started)))
+            if stream is None or not channel._watch_current(stream):
+                continue
+            if monotonic() < next_progress:
+                continue
+            next_progress = monotonic() + interval
+
+            if succeeded:
+                logger.info(f"Watch sent OK: {channel.name} (broadcast_id={stream.broadcast_id})")
 
             # Multi-channel idle: also send watch to all other idle channels
             # Only do this when parallel idle is explicitly enabled — avoids spurious
@@ -292,10 +306,7 @@ class WatchService:
                         continue
                     asyncio.create_task(_send_idle_watch(idle_ch))
 
-            # wait ~20 seconds for a progress update
-            await asyncio.sleep(20)
-
-            if self._twitch.gui.progress.minute_almost_done():
+            if succeeded and self._twitch.gui.progress.minute_almost_done():
                 # If the previous update was more than ~60s ago, and the progress tracker
                 # isn't counting down anymore, that means Twitch has temporarily
                 # stopped reporting drop's progress. To ensure the timer keeps at least somewhat
@@ -305,8 +316,11 @@ class WatchService:
 
                 # Solution 1: use GQL to query for the currently mined drop status
                 try:
-                    context = await self._twitch.gql_request(
-                        GQL_OPERATIONS["CurrentDrop"].with_variables({"channelID": str(channel.id)})
+                    context = await asyncio.wait_for(
+                        self._twitch.gql_request(
+                            GQL_OPERATIONS["CurrentDrop"].with_variables({"channelID": str(channel.id)})
+                        ),
+                        timeout=5,
                     )
                     current_user: JsonType | None = context["data"]["currentUser"]
                     if current_user is None:
@@ -324,8 +338,11 @@ class WatchService:
                         drop_data = None
                     else:
                         drop_data = current_user["dropCurrentSession"]
-                except GQLException:
+                except (GQLException, TimeoutError):
                     drop_data = None
+
+                if not channel._watch_current(stream):
+                    continue
 
                 if drop_data is not None:
                     gql_drop: TimedDrop | None = self._twitch._drops.get(drop_data["dropID"])
@@ -382,4 +399,4 @@ class WatchService:
                             )
                         )
 
-            await self.watch_sleep(interval - min(time() - last_sent, interval))
+            # (the loop's own 10s sleep above paces the next iteration)

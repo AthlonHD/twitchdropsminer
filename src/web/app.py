@@ -25,6 +25,7 @@ from pydantic import BaseModel
 from starlette.middleware.base import BaseHTTPMiddleware
 
 from src.auth import browser_login
+from src.web.diagnostics_api import DiagnosticsAPI
 
 import os as _os
 _DATA_DIR = Path(_os.environ.get("TDM_DATA_DIR", str(Path(__file__).parent.parent.parent / "data")))
@@ -490,6 +491,8 @@ socket_app = socketio.ASGIApp(sio, app)
 gui_manager: WebGUIManager | None = None
 twitch_client: Twitch | None = None
 _server_instance: uvicorn.Server | None = None
+
+app.include_router(DiagnosticsAPI(lambda: twitch_client).router)
 
 
 def set_managers(gui: WebGUIManager, twitch: Twitch):

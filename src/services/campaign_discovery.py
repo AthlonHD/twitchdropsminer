@@ -66,6 +66,8 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
+import sys
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
@@ -90,6 +92,11 @@ async def discover_campaigns_via_browser(twitch: Twitch) -> list[dict[str, Any]]
         from playwright.async_api import Response, async_playwright
     except ImportError:
         logger.debug("Playwright not installed -- skipping browser-based campaign discovery")
+        return []
+
+    if sys.platform.startswith("linux") and not os.environ.get("DISPLAY"):
+        # headful Chromium can't start without an X display (see docstring)
+        logger.debug("No DISPLAY -- skipping browser-based campaign discovery")
         return []
 
     access_token = getattr(twitch._auth_state, "access_token", None)

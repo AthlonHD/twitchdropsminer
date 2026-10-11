@@ -4879,6 +4879,8 @@ document.addEventListener('DOMContentLoaded', () => {
         window.open(API_BASE + '/api/logs/download', '_blank');
     });
 
+    document.getElementById('dump-diagnostics-btn')?.addEventListener('click', dumpDiagnostics);
+
     document.getElementById('qc-switch-btn')?.addEventListener('click', async () => {
         try {
             const r = await fetch(API_BASE + '/api/idle-watch/switch', { method: 'POST' });
@@ -6301,4 +6303,49 @@ function showRemoteTab(btn, targetId) {
     block.querySelectorAll('.help-tab-btn').forEach(b => b.classList.remove('active'));
     document.getElementById(targetId).style.display = '';
     btn.classList.add('active');
+}
+
+async function dumpDiagnostics() {
+    const button = document.getElementById('dump-diagnostics-btn');
+    const result = document.getElementById('diagnostics-result');
+    if (!button || !result || button.disabled) return;
+    const t = state.translations?.gui?.settings || {};
+    const msg = (key, fallback) => t[key] || fallback;
+    button.disabled = true;
+    button.setAttribute('aria-busy', 'true');
+    result.textContent = msg('diagnostics_saving', 'Saving diagnosis data…');
+    result.style.color = '';
+    const agent = navigator.userAgent || '';
+    const browser = /Edg\//.test(agent) ? 'Edge' : /Firefox\//.test(agent) ? 'Firefox'
+        : /Chrome\//.test(agent) ? 'Chrome' : /Safari\//.test(agent) ? 'Safari' : 'Other';
+    const platform = /Android/.test(agent) ? 'Android' : /iPhone|iPad/.test(agent) ? 'iOS'
+        : /Windows/.test(agent) ? 'Windows' : /Macintosh/.test(agent) ? 'macOS'
+        : /Linux/.test(agent) ? 'Linux' : 'Other';
+    try {
+        const response = await fetch(API_BASE + '/api/diagnostics', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ browser: {
+                width: Math.min(32000, Math.max(0, Math.round(window.innerWidth))),
+                height: Math.min(32000, Math.max(0, Math.round(window.innerHeight))),
+                browser, platform, tab: 'settings', online: Boolean(navigator.onLine),
+                socket_connected: Boolean(typeof socket !== 'undefined' && socket && socket.connected)
+            } })
+        });
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok || data.success !== true || typeof data.file !== 'string') {
+            result.textContent = response.status === 429
+                ? msg('diagnostics_busy', 'A diagnosis dump is already running or was just saved. Wait a few seconds and try again.')
+                : msg('diagnostics_error', 'Could not save diagnosis data. Try again.');
+            result.style.color = 'var(--error, #e55)';
+            return;
+        }
+        result.textContent = msg('diagnostics_saved', 'Diagnosis data saved to {path}.').replace('{path}', data.file);
+        result.style.color = 'var(--success, #3c9)';
+    } catch (_) {
+        result.textContent = msg('diagnostics_error', 'Could not save diagnosis data. Try again.');
+        result.style.color = 'var(--error, #e55)';
+    } finally {
+        button.disabled = false;
+        button.removeAttribute('aria-busy');
+    }
 }
