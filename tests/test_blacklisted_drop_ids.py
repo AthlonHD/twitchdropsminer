@@ -122,5 +122,33 @@ class TestBlacklistedDropIdsSettingsWiring(unittest.TestCase):
         )
 
 
+class TestBlacklistChangeReevaluatesImmediately(unittest.TestCase):
+    """Blocking the drop on the progress card must switch the card (and the
+    game choice) right away, like ignoring a campaign does -- not only on the
+    next minute tick or inventory fetch."""
+
+    def _manager(self):
+        broadcaster = MagicMock()
+        broadcaster.emit = AsyncMock()
+        settings = MagicMock()
+        settings.blacklisted_drop_ids = []
+        settings.drop_name_blacklist = []
+        manager = SettingsManager(broadcaster, settings, MagicMock(), on_change=MagicMock())
+        manager._trigger_reload_debounced = MagicMock()
+        return manager
+
+    def test_blacklisting_a_drop_id_triggers_reload(self):
+        manager = self._manager()
+        with unittest.mock.patch("asyncio.create_task", side_effect=lambda coro: coro.close()):
+            manager.update_settings({"blacklisted_drop_ids": ["drop_bad"]})
+        manager._trigger_reload_debounced.assert_called_once()
+
+    def test_drop_name_blacklist_change_triggers_reload(self):
+        manager = self._manager()
+        with unittest.mock.patch("asyncio.create_task", side_effect=lambda coro: coro.close()):
+            manager.update_settings({"drop_name_blacklist": ["ticket"]})
+        manager._trigger_reload_debounced.assert_called_once()
+
+
 if __name__ == "__main__":
     unittest.main()
