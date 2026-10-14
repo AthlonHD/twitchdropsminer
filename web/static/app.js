@@ -2306,7 +2306,7 @@ function toggleIgnoreCampaign(campaignId) {
         ids.push(campaignId);
     }
     state.settings.ignored_campaign_ids = ids;
-    saveSettings();
+    saveSettingsPatch({ ignored_campaign_ids: ids });
     renderInventory();
 }
 
@@ -2326,7 +2326,7 @@ function renderBlacklistedDropIds(ids) {
         btn.addEventListener('click', () => {
             state.settings.blacklisted_drop_ids.splice(idx, 1);
             renderBlacklistedDropIds([...state.settings.blacklisted_drop_ids]);
-            saveSettings();
+            saveSettingsPatch({ blacklisted_drop_ids: state.settings.blacklisted_drop_ids });
         });
         item.appendChild(label);
         item.appendChild(btn);
@@ -2384,7 +2384,7 @@ function blacklistCurrentDrop() {
     if (ids.includes(drop.drop_id)) return;
     if (!confirm(tr('gui.progress.blacklist_confirm', 'Permanently blacklist "{drop}"? It will be excluded from mining from now on, but other drops for this game will keep being mined.', { drop: drop.drop_name }))) return;
     renderBlacklistedDropIds([...ids, drop.drop_id]);
-    saveSettings();
+    saveSettingsPatch({ blacklisted_drop_ids: state.settings.blacklisted_drop_ids });
     const btn = document.getElementById('blacklist-drop-btn');
     if (btn) {
         btn.disabled = true;
@@ -3164,6 +3164,22 @@ function saveSettings() {
     }, 400);
 }
 
+// The drop blacklist and ignored campaigns are saved on their own, at once:
+// a settings_updated broadcast landing during saveSettings()' debounce (or
+// while a confirm() dialog is open) would otherwise reset them to the server's
+// old list before the save goes out, silently dropping the user's click.
+async function saveSettingsPatch(patch) {
+    try {
+        await fetch(API_BASE + '/api/settings', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(patch)
+        });
+    } catch (error) {
+        console.error('Failed to save settings:', error);
+    }
+}
+
 async function _saveSettingsNow() {
     if (!state.settingsLoaded) {
         // A change event fired (e.g. browser restoring form state on reload) before the
@@ -3203,8 +3219,6 @@ async function _saveSettingsNow() {
         auto_add_excluded_games: state.settings.auto_add_excluded_games || [],
         drop_name_blacklist: (document.getElementById('drop-blacklist-input')?.value || '')
             .split(',').map(s => s.trim()).filter(Boolean),
-        blacklisted_drop_ids: state.settings.blacklisted_drop_ids || [],
-        ignored_campaign_ids: state.settings.ignored_campaign_ids || [],
         scheduler_enabled: document.getElementById('scheduler-enabled')?.checked || false,
         scheduler_start: document.getElementById('scheduler-start')?.value || '22:00',
         scheduler_stop: document.getElementById('scheduler-stop')?.value || '08:00',
@@ -4774,7 +4788,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (!ids.includes(val)) {
             ids.push(val);
             renderBlacklistedDropIds([...ids]);
-            saveSettings();
+            saveSettingsPatch({ blacklisted_drop_ids: state.settings.blacklisted_drop_ids });
         }
         input.value = '';
     });
