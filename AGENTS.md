@@ -166,7 +166,8 @@ lang/                # Translation JSON files (19 languages)
 
 ### Authentication
 
-- Real-browser login: a server-side Playwright Chromium session, embedded live in the dashboard via noVNC, replaces the retired OAuth device-code flow (see `docs/superpowers/specs/2026-09-29-server-side-browser-login-design.md`)
+- Real-browser login in a plain (non-automated) Chrome: on a desktop TDM opens the window itself; on a headless server the user runs `scripts/tdm_login_helper.py` (served at `/login-helper.py`) on their own PC, which posts the session cookies to `/api/login/browser/helper-session`. The OAuth device-code flow is gone.
+- The Client-Integrity token is minted in a plain Chrome as well (`src/auth/plain_chrome.py`, browser-level CDP only) — Playwright-driven browsers get their tokens rejected by Twitch
 - Managed by `src/auth/auth_state.py` (`_AuthState` class) and `src/auth/browser_login.py` (`BrowserLoginManager`)
 - Access tokens stored in `cookies.jar` in DATA_DIR, exactly as before
 - Device ID from Twitch's `unique_id` cookie, captured from the same real browser session
@@ -309,7 +310,7 @@ The application requires:
 - Virtual environment at `env/` (must be activated before running commands)
 - Dependencies from `pyproject.toml` (includes FastAPI, uvicorn, Socket.IO, Playwright)
 - Playwright's Chromium: `playwright install --with-deps chromium`
-- System packages for the real-browser login: `xvfb`, `x11vnc`, and `procps`
+- System packages on headless Linux: `xvfb` and `procps`
   (for `pgrep`, used by `sweep_orphaned_processes()` at startup)
 
 Docker deployment:
@@ -400,8 +401,8 @@ The application uses a web-based interface accessible via browser:
 **Dockerfile:**
 
 - Based on `python:3.12-slim` (glibc — Chromium cannot run on Alpine's musl)
-- Installs system packages `tzdata xvfb x11vnc procps` for the
-  real-browser login (`procps` provides `pgrep` for the startup orphan sweep)
+- Installs system packages `tzdata xvfb procps` for the
+  integrity-token browser (`procps` provides `pgrep` for the startup orphan sweep)
 - Installs dependencies from `pyproject.toml`, then `playwright install --with-deps chromium`
 - Exposes port 8080
 - Health check on `/healthz`
@@ -418,7 +419,7 @@ The application uses a web-based interface accessible via browser:
 - **WebSocket for real-time** - Socket.IO chosen for reliability (fallback to polling)
 - **Single-page app** - Simpler than full framework (React/Vue), fast load times
 - **Direct Docker support** - Environment detection, proper path handling
-- **Real-browser login, server-side** - a virtual display + embedded noVNC view keeps login itself web-based (no desktop helper program), while avoiding device-code auth's token-scoping problems (issues #15-#18)
+- **Real-browser login in a plain Chrome** - Twitch rejects remote-controlled browsers, so login happens in a normal Chrome window (locally, or on the user's PC via the login helper); this also avoids device-code auth's token-scoping problems (issues #15-#18)
 
 ## Project Scope
 
@@ -431,7 +432,4 @@ The application uses a web-based interface accessible via browser:
 
 **NOT supported:**
 
-- Multi-account support
-- Channel points mining
-- Mining for unlinked campaigns
 - Desktop GUI

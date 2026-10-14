@@ -206,6 +206,10 @@ def parse_catalog(payload: Any, now: datetime | None = None) -> list[JsonType]:
             raise ValueError("unexpected number of groups")
         for group in groups:
             for reward in group.get("rewards") or []:
+                # The feed carries box art only on the group, not on each reward's game.
+                game = reward.get("game") if isinstance(reward, dict) else None
+                if isinstance(game, dict) and not game.get("boxArtURL"):
+                    game["boxArtURL"] = group.get("gameBoxArtURL")
                 cleaned = _clean(reward)
                 if cleaned is not None:
                     found[cleaned["id"]] = cleaned

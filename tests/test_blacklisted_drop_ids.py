@@ -112,7 +112,7 @@ class TestBlacklistedDropIdsSettingsWiring(unittest.TestCase):
         mock_settings = MagicMock()
         mock_console = MagicMock()
 
-        with unittest.mock.patch("asyncio.create_task"):
+        with unittest.mock.patch("asyncio.create_task", side_effect=lambda coro: coro.close()):
             manager = SettingsManager(mock_broadcaster, mock_settings, mock_console)
             manager.update_settings({"blacklisted_drop_ids": ["drop_bad"]})
 

@@ -19,7 +19,6 @@ from src.config import GQL_OPERATIONS, ClientType
 from src.exceptions import ExitRequest, GQLException
 from src.i18n import _
 from src.models import DropsCampaign
-from src.services.campaign_discovery import discover_campaigns_via_browser
 from src.services.public_catalog import campaign_from_feed, fetch_public_campaigns, link_states
 from src.utils import chunk
 
@@ -121,9 +120,7 @@ class InventoryService:
             # ClientType.WEB's GQL requests need a real Client-Integrity token
             # (see _AuthState._ensure_integrity_token) that a browser JS
             # challenge mints; acquisition can fail or not have completed yet
-            # (slow, or environment-specific -- headful Chromium opening its
-            # CDP debug port is known-unreliable on some virtualized hosts,
-            # see src/services/campaign_discovery.py's own docstring).
+            # (slow, or environment-specific).
             # Letting this escape used to crash the entire miner outright on
             # every single occurrence (reported live: right after a fresh,
             # successful login, before anything else got a chance to run) --
@@ -191,18 +188,10 @@ class InventoryService:
                 for c in available_list
                 if c["status"] in applicable_statuses  # that are currently not expired
             }
-            if self._twitch._client_type is ClientType.SMARTBOX:
-                # device-code logins only get a reduced dropCampaigns list;
-                # the public feed fills in the rest (additive, existing ids win)
-                public = await fetch_public_campaigns(
-                    await self._twitch.get_session(), self._twitch.settings.proxy
-                )
-                for c in public:
-                    public_records[c["id"]] = c
-                    available_campaigns.setdefault(c["id"], c)
         except GQLException as exc:
             if "IntegrityCheckFailed" not in str(exc):
                 raise
+            self._twitch._auth_state.reject_integrity_token()
             # The account-bound campaign list is integrity-gated, but the list
             # itself needs no account: take ids from the public feed and let
             # the CampaignDetails queries below fill in the rest.
@@ -214,22 +203,6 @@ class InventoryService:
             available_campaigns = dict(public_records)
             if not available_campaigns and not inventory_data:
                 raise
-
-        # Supplemental: SMARTBOX's own client-id (used above) sees a reduced
-        # campaign catalog compared to Twitch's real web client (see
-        # campaign_discovery.py's own docstring for the confirmed root
-        # cause). ADDITIVE only -- an id already found above always wins,
-        # this just fills in campaigns SMARTBOX's query never returned at
-        # all. Never raises and returns [] if Playwright isn't installed, so
-        # this is a pure widening, never a regression on a box without it.
-        try:
-            browser_campaigns = await discover_campaigns_via_browser(self._twitch)
-        except Exception as exc:
-            logger.warning(f"Browser-based campaign discovery raised unexpectedly: {exc}")
-            browser_campaigns = []
-        for c in browser_campaigns:
-            if c.get("status") in applicable_statuses and c.get("id") not in available_campaigns:
-                available_campaigns[c["id"]] = c
 
         # fetch detailed data for each campaign, in chunks
         status_update(_.t["gui"]["status"]["fetching_campaigns"])
@@ -250,6 +223,8 @@ class InventoryService:
                     # down the entire inventory fetch (and thus the whole miner) -
                     # log it and keep going with everything else that succeeded.
                     logger.error(f"Failed to fetch campaign details for a chunk, skipping it: {exc}")
+                    if "IntegrityCheckFailed" in str(exc):
+                        self._twitch._auth_state.reject_integrity_token()
                     continue
                 # merge the inventory and campaigns datas together
                 inventory_data = GQLClient.merge_data(inventory_data, chunk_campaigns_data)

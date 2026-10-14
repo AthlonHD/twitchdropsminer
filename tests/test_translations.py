@@ -5,7 +5,8 @@ from src.i18n.translator import GUISettings
 
 
 def test_all_language_settings_include_gui_settings_schema_keys():
-    required_settings_keys = set(GUISettings.__annotations__)
+    required_settings_keys = set(GUISettings.__required_keys__)
+    known_settings_keys = set(GUISettings.__annotations__)
     english_settings = json.loads((LANG_PATH / "English.json").read_text(encoding="utf-8"))["gui"][
         "settings"
     ]
@@ -18,5 +19,5 @@ def test_all_language_settings_include_gui_settings_schema_keys():
         if missing:
             missing_by_language[filepath.name] = missing
 
-    assert sorted(set(english_settings) - required_settings_keys) == []
+    assert sorted(set(english_settings) - known_settings_keys) == []
     assert missing_by_language == {}

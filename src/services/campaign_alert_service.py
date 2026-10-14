@@ -49,7 +49,7 @@ class CampaignAlertService:
                 continue
             if wanted and c.game not in wanted:
                 continue
-            if c.ends_at <= threshold:
+            if now < c.ends_at <= threshold:
                 result.append(c)
         return result
 

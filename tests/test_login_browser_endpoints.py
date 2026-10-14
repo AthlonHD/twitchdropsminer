@@ -3,7 +3,6 @@ import unittest
 from unittest.mock import AsyncMock, MagicMock, patch
 
 from fastapi.testclient import TestClient
-from starlette.websockets import WebSocketDisconnect
 
 from src.auth import browser_login
 from src.auth.auth_state import _AuthState
@@ -12,17 +11,15 @@ from src.i18n import _
 from src.web import app as app_module
 
 
-def _fake_manager(port: int = 6993) -> MagicMock:
+def _fake_manager(mode: str = "remote") -> MagicMock:
     """A stand-in for BrowserLoginManager exposing only the public surface
     the web layer is allowed to touch."""
     manager = MagicMock()
     manager.in_progress = True
-    manager.websocket_port = port
     manager.cancel = MagicMock()
-    manager.start = AsyncMock(return_value=port)
+    manager.start = AsyncMock(return_value=mode)
     manager.stop = AsyncMock()
     manager.inject_session_from_helper = AsyncMock()
-    manager.captured_integrity_token = AsyncMock(return_value=None)
     return manager
 
 
@@ -120,84 +117,6 @@ class TestHelperSessionEndpoint(unittest.TestCase):
         manager.inject_session_from_helper.assert_awaited_once_with("abc123", "")
 
 
-class TestBrowserLoginWebSocketAuth(unittest.TestCase):
-    """
-    Regression coverage for a reviewer-flagged Critical finding: unlike every
-    HTTP route, this WebSocket is not covered by PasswordAuthMiddleware (a
-    BaseHTTPMiddleware, which never runs for scope["type"] == "websocket"),
-    so the route itself must reject a mismatched Origin and an unauthenticated
-    caller before ever accepting the connection or touching the in-progress
-    browser-login session it would otherwise proxy into unconditionally.
-    """
-
-    def setUp(self):
-        self._setup_patcher = patch("src.web.app._is_setup_done", return_value=True)
-        self._setup_patcher.start()
-        self.addCleanup(self._setup_patcher.stop)
-        # Pin to "no password/token configured" by default -- individual
-        # tests override with their own patch when they need a password
-        # set, rather than depending on whatever the host machine has.
-        self._pw_patcher = patch("src.web.app._get_password", return_value="")
-        self._pw_patcher.start()
-        self.addCleanup(self._pw_patcher.stop)
-        self._token_patcher = patch("src.web.app._get_bot_token", return_value="")
-        self._token_patcher.start()
-        self.addCleanup(self._token_patcher.stop)
-        self.client = TestClient(app_module.app)
-        self.addCleanup(browser_login.set_active_manager, None)
-
-    def test_rejects_missing_or_mismatched_origin(self):
-        with (
-            self.assertRaises(WebSocketDisconnect) as ctx,
-            self.client.websocket_connect("/api/login/browser/ws"),
-        ):
-            pass
-        self.assertEqual(ctx.exception.code, 1008)
-
-    def test_rejects_when_password_set_and_no_valid_session_or_token(self):
-        with (
-            patch("src.web.app._get_password", return_value="hunter2"),
-            self.assertRaises(WebSocketDisconnect) as ctx,
-            self.client.websocket_connect(
-                "/api/login/browser/ws",
-                headers={"origin": "http://testserver", "host": "testserver"},
-            ),
-        ):
-            pass
-        self.assertEqual(ctx.exception.code, 1008)
-
-    def test_allows_matching_origin_with_no_password_set_through_to_the_in_progress_gate(self):
-        # No password configured and origin matches host -- auth passes, so
-        # the connection reaches the next gate (in-progress check) instead
-        # of being rejected for Origin/auth reasons (1008).
-        browser_login.set_active_manager(None)
-        with (
-            self.assertRaises(WebSocketDisconnect) as ctx,
-            self.client.websocket_connect(
-                "/api/login/browser/ws",
-                headers={"origin": "http://testserver", "host": "testserver"},
-            ),
-        ):
-            pass
-        self.assertEqual(ctx.exception.code, 4404)
-
-    def test_closes_4404_when_the_active_manager_has_no_live_session(self):
-        # websocket_port is None once stop() has run -- the route must not
-        # reach into ._session and crash on the TOCTOU window.
-        manager = _fake_manager()
-        manager.websocket_port = None
-        browser_login.set_active_manager(manager)
-        with (
-            self.assertRaises(WebSocketDisconnect) as ctx,
-            self.client.websocket_connect(
-                "/api/login/browser/ws",
-                headers={"origin": "http://testserver", "host": "testserver"},
-            ),
-        ):
-            pass
-        self.assertEqual(ctx.exception.code, 4404)
-
-
 class TestBrowserLoginManagerIsSharedAcrossLayers(unittest.IsolatedAsyncioTestCase):
     """
     The regression this whole file exists to prevent: the auth flow used to
@@ -214,7 +133,7 @@ class TestBrowserLoginManagerIsSharedAcrossLayers(unittest.IsolatedAsyncioTestCa
 
     async def test_auth_flow_publishes_its_manager_and_clears_it_afterwards(self):
         mock_twitch = MagicMock()
-        mock_twitch.gui.login.start_browser_login = AsyncMock()
+        mock_twitch.gui.login.start_browser_login_remote = AsyncMock()
         auth_state = _AuthState(mock_twitch)
 
         manager = _fake_manager()
@@ -258,112 +177,46 @@ class TestBrowserLoginManagerIsSharedAcrossLayers(unittest.IsolatedAsyncioTestCa
         manager.stop.assert_awaited()
         self.assertIsNone(browser_login.get_active_manager())
 
-    async def test_cancel_route_and_ws_route_act_on_the_auth_flows_manager(self):
-        mock_twitch = MagicMock()
-        mock_twitch.gui.login.start_browser_login = AsyncMock()
-        auth_state = _AuthState(mock_twitch)
-
-        manager = _fake_manager(port=6993)
-        parked = asyncio.Event()
-        release = asyncio.Event()
-
-        async def wait_for_cookie(*args, **kwargs):
-            parked.set()
-            await release.wait()
-            raise BrowserLoginCancelled()
-
-        manager.wait_for_cookie = AsyncMock(side_effect=wait_for_cookie)
-
-        mock_reader = AsyncMock()
-        mock_reader.read = AsyncMock(return_value=b"")
-        mock_writer = MagicMock()
-        mock_writer.wait_closed = AsyncMock()
-        open_connection = AsyncMock(return_value=(mock_reader, mock_writer))
-
-        with (
-            patch("src.auth.browser_login.BrowserLoginManager", return_value=manager),
-            patch("src.web.app._is_setup_done", return_value=True),
-            patch("src.web.app._get_password", return_value=""),
-            patch("src.web.app._get_bot_token", return_value=""),
-        ):
-            task = asyncio.ensure_future(auth_state._browser_login())
-            await asyncio.wait_for(parked.wait(), timeout=5)
-
-            # TestClient drives the app on its own portal thread; the auth
-            # flow stays parked on `release` in this loop meanwhile.
-            client = TestClient(app_module.app)
-
-            with patch("asyncio.open_connection", open_connection):
-                with client.websocket_connect(
-                    "/api/login/browser/ws",
-                    headers={"origin": "http://testserver", "host": "testserver"},
-                ):
-                    pass
-
-            response = client.post("/api/login/browser/cancel")
-            self.assertEqual(response.status_code, 200)
-
-            # The cancel route reached the very instance the auth flow is
-            # awaiting -- not a second, unrelated manager.
-            manager.cancel.assert_called_once()
-            # ...and the WS proxy dialled that same instance's port.
-            open_connection.assert_awaited_once()
-            self.assertEqual(open_connection.await_args.args[1], 6993)
-            mock_writer.close.assert_called_once()
-            mock_writer.wait_closed.assert_awaited_once()
-
-            release.set()
-            task.cancel()
-            try:
-                await task
-            except asyncio.CancelledError:
-                pass
-
 
 class TestLoginFormManagerBrowserLoginStatus(unittest.IsolatedAsyncioTestCase):
-    """
-    start_browser_login() used to set the websocket port and THEN call
-    update(), which unconditionally clears it again -- so get_status() (the
-    payload behind /api/status and the socket-connect snapshot) never carried
-    browser_login_ready and only a dashboard that happened to already be
-    connected the instant the Socket.IO event fired ever showed the panel.
-    On a fresh install nobody is connected yet at that point.
-    """
-
-    async def test_get_status_reports_browser_login_ready_after_start(self):
+    def _manager(self):
         from src.web.managers.login import LoginFormManager
 
         broadcaster = MagicMock()
         broadcaster.emit = AsyncMock()
-        manager = LoginFormManager(broadcaster, MagicMock())
+        return LoginFormManager(broadcaster, MagicMock()), broadcaster
 
-        self.assertNotIn("browser_login_ready", manager.get_status())
+    async def test_remote_attempt_reports_the_login_helper(self):
+        manager, broadcaster = self._manager()
+        await manager.start_browser_login_remote()
+        self.assertEqual(manager.get_status()["login_helper"], "remote")
+        payload = broadcaster.emit.await_args_list[-1].args[1]
+        self.assertEqual(payload["login_helper"], "remote")
 
-        await manager.start_browser_login(6990)
-
+    async def test_local_attempt_also_offers_the_helper(self):
+        # The local window may be on a machine the user is not sitting at
+        # (dashboard opened from a phone, TDM as a Windows service).
+        manager, _ = self._manager()
+        await manager.start_browser_login_local()
         status = manager.get_status()
-        self.assertEqual(
-            status["browser_login_ready"], {"websocket_path": "/api/login/browser/ws"}
-        )
-        self.assertIsNone(status["user_id"])
-        # ...and the "login required" status update still landed.
-        self.assertEqual(status["status"], _.t["login"]["status"]["required"])
+        self.assertEqual(status["login_helper"], "local")
+        self.assertIn("browser window", status["status"].lower())
 
-        # Let update()'s fire-and-forget broadcast task run before the loop
-        # closes, so the test doesn't leak a pending task warning.
+    async def test_local_attempt_survives_a_language_without_browser_login_strings(self):
+        from src.i18n import _
+
+        manager, _broadcaster = self._manager()
+        login = {k: v for k, v in _.t["login"].items() if k != "browser_login"}
+        with patch.dict(_.t, {"login": login}):
+            await manager.start_browser_login_local()
+        self.assertIn("browser window", manager.get_status()["status"].lower())
+
+    async def test_a_later_status_update_clears_the_helper_again(self):
+        manager, _ = self._manager()
+        await manager.start_browser_login_remote()
+        manager.update("Logged in", 1, "someone")
         await asyncio.sleep(0)
-
-    async def test_a_later_status_update_clears_the_panel_again(self):
-        from src.web.managers.login import LoginFormManager
-
-        broadcaster = MagicMock()
-        broadcaster.emit = AsyncMock()
-        manager = LoginFormManager(broadcaster, MagicMock())
-
-        await manager.start_browser_login(6990)
-        manager.update(_.t["login"]["status"]["logged_in"], 12345, "someone")
-        self.assertNotIn("browser_login_ready", manager.get_status())
-        await asyncio.sleep(0)
+        self.assertNotIn("login_helper", manager.get_status())
 
 
 class TestBrowserLoginFailuresDoNotKillTheApp(unittest.IsolatedAsyncioTestCase):
@@ -379,7 +232,7 @@ class TestBrowserLoginFailuresDoNotKillTheApp(unittest.IsolatedAsyncioTestCase):
 
     async def _run_until_second_attempt(self, first_exception):
         mock_twitch = MagicMock()
-        mock_twitch.gui.login.start_browser_login = AsyncMock()
+        mock_twitch.gui.login.start_browser_login_remote = AsyncMock()
         mock_twitch.gui.login.update = MagicMock()
         auth_state = _AuthState(mock_twitch)
 
@@ -423,44 +276,35 @@ class TestBrowserLoginFailuresDoNotKillTheApp(unittest.IsolatedAsyncioTestCase):
             [call.args[0] for call in update.call_args_list],
         )
 
-    async def test_missing_system_dependencies_are_retried_not_fatal(self):
-        from src.auth.browser_login import BrowserLoginUnavailable
-
-        mock_twitch = MagicMock()
-        mock_twitch.gui.login.start_browser_login = AsyncMock()
-        mock_twitch.gui.login.update = MagicMock()
-        auth_state = _AuthState(mock_twitch)
-
-        calls = []
-
-        def make_manager():
-            manager = _fake_manager()
-
-            async def start():
-                calls.append(1)
-                if len(calls) == 1:
-                    raise BrowserLoginUnavailable("no chromium binary")
-                return 6993
-
-            manager.start = AsyncMock(side_effect=start)
-            manager.wait_for_cookie = AsyncMock(
-                return_value={"auth-token": "token-after-install", "unique_id": "device-abc"}
-            )
-            return manager
-
-        with (
-            patch("src.auth.browser_login.BrowserLoginManager", side_effect=make_manager),
-            patch("src.auth.auth_state.BROWSER_LOGIN_RETRY_DELAY_SEC", 0),
-        ):
-            token = await asyncio.wait_for(auth_state._browser_login(), timeout=5)
-
-        self.assertEqual(token, "token-after-install")
-        self.assertEqual(len(calls), 2)
-        self.assertIn(
-            _.t["login"]["status"]["unavailable"],
-            [call.args[0] for call in mock_twitch.gui.login.update.call_args_list],
-        )
-
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestLoginHelperDownload(unittest.TestCase):
+    def test_served_without_dashboard_auth_even_with_a_password(self):
+        from pathlib import Path
+
+        from starlette.testclient import TestClient
+
+        with (
+            patch.object(app_module, "_is_setup_done", return_value=True),
+            patch.object(app_module, "_get_password", return_value="secret"),
+        ):
+            response = TestClient(app_module.app).get("/login-helper.py")
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.headers["content-type"].startswith("text/x-python"))
+        expected = (Path(app_module.__file__).resolve().parents[2] / "scripts" / "tdm_login_helper.py").read_text(encoding="utf-8")
+        self.assertEqual(response.text, expected)
+
+    def test_helper_session_post_still_needs_the_password(self):
+        from starlette.testclient import TestClient
+
+        with (
+            patch.object(app_module, "_is_setup_done", return_value=True),
+            patch.object(app_module, "_get_password", return_value="secret"),
+        ):
+            response = TestClient(app_module.app).post(
+                "/api/login/browser/helper-session", json={"auth_token": "x"}
+            )
+        self.assertEqual(response.status_code, 401)

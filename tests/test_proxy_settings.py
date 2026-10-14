@@ -15,10 +15,11 @@ class TestProxySettings(unittest.TestCase):
         # Create a pure mock Settings without wrapping a real instance
         # This avoids file I/O during tests
         self.mock_settings = MagicMock(spec=Settings)
+        self.mock_settings.make_predictions = False
         self.mock_console = MagicMock(spec=ConsoleOutputManager)
 
         # Mock asyncio.create_task
-        self.create_task_patcher = unittest.mock.patch("asyncio.create_task")
+        self.create_task_patcher = unittest.mock.patch("asyncio.create_task", side_effect=lambda coro: coro.close())
         self.mock_create_task = self.create_task_patcher.start()
 
     def tearDown(self):

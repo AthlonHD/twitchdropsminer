@@ -6,11 +6,23 @@ from src.models.game import Game
 from src.services.stream_selector import StreamSelector
 
 
+def _benefit(name):
+    benefit = MagicMock()
+    benefit.name = name
+    benefit.image_url = None
+    benefit.type.name = "BADGE"
+    benefit.is_wanted.return_value = True
+    return benefit
+
+
 class TestWantedGamesFilter(unittest.TestCase):
     def setUp(self):
         # Mock Settings
         self.settings = MagicMock()
         self.settings.games_to_watch = ["Game1", "Game2"]
+        self.settings.preferred_games = []
+        self.settings.drop_name_blacklist = []
+        self.settings.blacklisted_drop_ids = []
         self.settings.mining_benefits = {
             "BADGE": True,
             "DIRECT_ENTITLEMENT": True,
@@ -27,9 +39,11 @@ class TestWantedGamesFilter(unittest.TestCase):
         c1.name = "Test Campaign"
         c1.campaign_url = "http://test.url"
         d1 = MagicMock()
+        d1.required_minutes = 30
         d1.name = "Test Drop"
         d1.is_claimed = False
         d1.get_wanted_unclaimed_benefits.return_value = ["Benefit1"]
+        d1.benefits = [_benefit(name) for name in ["Benefit1"]]
         c1.drops = [d1]
         c1.has_wanted_unclaimed_benefits.side_effect = (
             DropsCampaign.has_wanted_unclaimed_benefits.__get__(c1, DropsCampaign)
@@ -40,8 +54,10 @@ class TestWantedGamesFilter(unittest.TestCase):
         c2.game = Game({"id": 2, "name": "Game2"})
         c2.can_earn_within.return_value = True
         d2 = MagicMock()
+        d2.required_minutes = 30
         d2.is_claimed = False
         d2.get_wanted_unclaimed_benefits.return_value = []
+        d2.benefits = [_benefit(name) for name in []]
         c2.drops = [d2]
         c2.has_wanted_unclaimed_benefits.side_effect = (
             DropsCampaign.has_wanted_unclaimed_benefits.__get__(c2, DropsCampaign)
@@ -52,8 +68,10 @@ class TestWantedGamesFilter(unittest.TestCase):
         c3.game = Game({"id": 3, "name": "Game3"})
         c3.can_earn_within.return_value = True
         d3 = MagicMock()
+        d3.required_minutes = 30
         d3.is_claimed = False
         d3.get_wanted_unclaimed_benefits.return_value = ["Benefit3"]
+        d3.benefits = [_benefit(name) for name in ["Benefit3"]]
         c3.drops = [d3]
         c3.has_wanted_unclaimed_benefits.side_effect = (
             DropsCampaign.has_wanted_unclaimed_benefits.__get__(c3, DropsCampaign)
@@ -67,9 +85,11 @@ class TestWantedGamesFilter(unittest.TestCase):
         c4.name = "Test Campaign"
         c4.campaign_url = "http://test.url"
         d4 = MagicMock()
+        d4.required_minutes = 30
         d4.name = "Test Drop"
         d4.is_claimed = True
         d4.get_wanted_unclaimed_benefits.return_value = ["Benefit4"]
+        d4.benefits = [_benefit(name) for name in ["Benefit4"]]
         c4.drops = [d4]
         c4.has_wanted_unclaimed_benefits.side_effect = (
             DropsCampaign.has_wanted_unclaimed_benefits.__get__(c4, DropsCampaign)
@@ -83,9 +103,11 @@ class TestWantedGamesFilter(unittest.TestCase):
         c5.name = "Test Campaign"
         c5.campaign_url = "http://test.url"
         d5 = MagicMock()
+        d5.required_minutes = 30
         d5.name = "Test Drop"
         d5.is_claimed = False
         d5.get_wanted_unclaimed_benefits.return_value = ["Benefit5"]
+        d5.benefits = [_benefit(name) for name in ["Benefit5"]]
         c5.drops = [d5]
         c5.has_wanted_unclaimed_benefits.side_effect = (
             DropsCampaign.has_wanted_unclaimed_benefits.__get__(c5, DropsCampaign)

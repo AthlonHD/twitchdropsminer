@@ -12,8 +12,8 @@ def _make_campaign(id, game_name, ends_in_hours, unclaimed_drops):
     c.game = MagicMock()
     c.game.name = game_name
     c.ends_at = datetime.now(timezone.utc) + timedelta(hours=ends_in_hours)
-    c.is_claimed = unclaimed_drops == 0
-    c.unclaimed_drops = unclaimed_drops
+    c.finished = unclaimed_drops == 0
+    c.remaining_drops = unclaimed_drops
     c.campaign_url = f"https://twitch.tv/drops/campaigns?dropID={id}"
     return c
 
@@ -22,6 +22,7 @@ def test_finds_expiring_campaigns():
     from src.services.campaign_alert_service import CampaignAlertService
 
     service = CampaignAlertService.__new__(CampaignAlertService)
+    service._twitch = MagicMock(wanted_games=[])
     service._alerted: set = set()
 
     expiring = _make_campaign("c1", "R6", 10, 2)
@@ -41,7 +42,18 @@ def test_already_alerted_not_repeated():
     from src.services.campaign_alert_service import CampaignAlertService
 
     service = CampaignAlertService.__new__(CampaignAlertService)
+    service._twitch = MagicMock(wanted_games=[])
     service._alerted = {"c1"}
     campaign = _make_campaign("c1", "R6", 5, 2)
     result = service._get_campaigns_to_alert([campaign])
     assert result == []
+
+
+def test_already_ended_campaign_not_alerted():
+    from src.services.campaign_alert_service import CampaignAlertService
+
+    service = CampaignAlertService.__new__(CampaignAlertService)
+    service._twitch = MagicMock(wanted_games=[])
+    service._alerted = set()
+    ended = _make_campaign("c1", "R6", -136, 2)
+    assert service._get_campaigns_to_alert([ended]) == []

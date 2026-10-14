@@ -7,8 +7,8 @@ from datetime import datetime, timedelta, timezone
 from unittest.mock import AsyncMock, MagicMock, patch
 
 from src.auth.browser_login import (
-    _capture_integrity_token,
     _decode_jwt_expiry,
+    _session_cookies,
     acquire_integrity_token,
 )
 
@@ -48,137 +48,51 @@ class TestDecodeJwtExpiry(unittest.TestCase):
         self.assertGreater(expiry, before + timedelta(hours=3))
 
 
-class TestCaptureIntegrityToken(unittest.IsolatedAsyncioTestCase):
-    """
-    Twitch's own JS fires a gql.twitch.tv/integrity POST on a normal page
-    load (confirmed live) -- this listens for that response on a page
-    that's already navigating, rather than driving a separate toolchain
-    to mint one from scratch.
-    """
+class TestSessionCookies(unittest.TestCase):
+    """The cookies a plain Chrome is seeded with before minting a token."""
 
-    def _fake_page(self):
-        page = MagicMock()
-        page.on = MagicMock()
-        page.remove_listener = MagicMock()
-        return page
+    def test_auth_token_is_readable_by_the_page(self):
+        # An httpOnly auth-token leaves Twitch's page anonymous (confirmed
+        # live: /integrity then goes out without Authorization and the
+        # resulting token fails dropCampaign).
+        cookies = {c["name"]: c for c in _session_cookies("token123", "device-abc")}
+        self.assertEqual(set(cookies), {"auth-token", "unique_id"})
+        self.assertFalse(cookies["auth-token"].get("httpOnly", False))
 
-    async def test_captures_the_token_from_a_matching_response(self):
-        page = self._fake_page()
-        exp = int(time.time()) + 3600
-        token = _fake_jwt(exp)
-
-        async def fake_json():
-            return {"token": token}
-
-        response = MagicMock()
-        response.url = "https://gql.twitch.tv/integrity"
-        response.json = fake_json
-
-        task = asyncio.ensure_future(_capture_integrity_token(page))
-        await asyncio.sleep(0)  # let the task run far enough to register page.on()
-        # Simulate the response arriving: call the handler page.on() was given.
-        on_response = page.on.call_args.args[1]
-        await on_response(response)
-        result = await task
-
-        self.assertIsNotNone(result)
-        captured_token, expiry = result
-        self.assertEqual(captured_token, token)
-        self.assertAlmostEqual(expiry.timestamp(), exp, delta=1)
-        page.remove_listener.assert_called_once()
-
-    async def test_ignores_unrelated_responses(self):
-        page = self._fake_page()
-
-        async def fake_json():
-            return {"some": "other payload"}
-
-        unrelated = MagicMock()
-        unrelated.url = "https://gql.twitch.tv/gql"
-        unrelated.json = fake_json
-
-        with patch(
-            "src.auth.browser_login.INTEGRITY_CAPTURE_TIMEOUT_SEC", 0.2
-        ):
-            task = asyncio.ensure_future(_capture_integrity_token(page))
-            await asyncio.sleep(0)
-            on_response = page.on.call_args.args[1]
-            await on_response(unrelated)
-            result = await task
-
-        self.assertIsNone(result)
-
-    async def test_times_out_to_none_when_nothing_arrives(self):
-        page = self._fake_page()
-        with patch("src.auth.browser_login.INTEGRITY_CAPTURE_TIMEOUT_SEC", 0.2):
-            result = await _capture_integrity_token(page)
-        self.assertIsNone(result)
+    def test_skips_the_device_id_cookie_when_blank(self):
+        names = {c["name"] for c in _session_cookies("token123", "")}
+        self.assertEqual(names, {"auth-token"})
 
 
 class TestAcquireIntegrityToken(unittest.IsolatedAsyncioTestCase):
     """
-    Regression coverage for the replacement of the streamlink-based
-    approach: a real, throwaway Chromium session authenticated with the
-    already-saved cookies, reusing the exact launch configuration the
-    real-browser login itself already uses successfully.
+    The token is minted in a plain, non-Playwright Chrome (see
+    _mint_integrity_token_plain): one minted in a Playwright-driven browser
+    fails Twitch's integrity check. These never launch a real browser.
     """
 
-    def _mock_playwright_stack(self, capture_result):
-        mock_page = AsyncMock()
-        mock_context = AsyncMock()
-        mock_context.new_page = AsyncMock(return_value=mock_page)
-        mock_browser = AsyncMock()
-        mock_browser.new_context = AsyncMock(return_value=mock_context)
-        mock_playwright_instance = AsyncMock()
-        mock_playwright_instance.chromium.launch = AsyncMock(return_value=mock_browser)
-        mock_cm = AsyncMock()
-        mock_cm.start = AsyncMock(return_value=mock_playwright_instance)
-        return mock_cm, mock_browser, mock_context, mock_page
-
-    async def test_returns_the_captured_token_on_a_real_display(self):
+    async def test_returns_the_minted_token_on_a_real_display(self):
         expiry = datetime.now(timezone.utc) + timedelta(hours=4)
-        mock_cm, mock_browser, mock_context, _page = self._mock_playwright_stack(("itok", expiry))
-
+        mint = AsyncMock(return_value=("itok", expiry))
         with (
             patch("src.auth.browser_login._detect_real_display", return_value=7),
-            patch("src.auth.browser_login.async_playwright", return_value=mock_cm),
-            patch(
-                "src.auth.browser_login._capture_integrity_token",
-                new=AsyncMock(return_value=("itok", expiry)),
-            ),
+            patch("src.auth.browser_login._plain_chrome_binary", new=AsyncMock(return_value="chrome")),
+            patch("src.auth.browser_login._mint_integrity_token_plain", new=mint),
         ):
             result = await acquire_integrity_token("token123", "device-abc")
 
         self.assertEqual(result, ("itok", expiry))
-        mock_context.add_cookies.assert_awaited_once()
-        cookies = mock_context.add_cookies.call_args.args[0]
-        names = {c["name"] for c in cookies}
-        self.assertEqual(names, {"auth-token", "unique_id"})
+        binary, env, auth_token, device_id = mint.await_args.args
+        self.assertEqual((binary, auth_token, device_id), ("chrome", "token123", "device-abc"))
+        self.assertEqual(env["DISPLAY"], ":7")
 
-    async def test_skips_the_device_id_cookie_when_blank(self):
-        expiry = datetime.now(timezone.utc) + timedelta(hours=4)
-        mock_cm, mock_browser, mock_context, _page = self._mock_playwright_stack(("itok", expiry))
-
+    async def test_none_when_minting_fails(self):
         with (
             patch("src.auth.browser_login._detect_real_display", return_value=7),
-            patch("src.auth.browser_login.async_playwright", return_value=mock_cm),
+            patch("src.auth.browser_login._plain_chrome_binary", new=AsyncMock(return_value="chrome")),
             patch(
-                "src.auth.browser_login._capture_integrity_token",
-                new=AsyncMock(return_value=("itok", expiry)),
-            ),
-        ):
-            await acquire_integrity_token("token123", "")
-
-        cookies = mock_context.add_cookies.call_args.args[0]
-        names = {c["name"] for c in cookies}
-        self.assertEqual(names, {"auth-token"})
-
-    async def test_none_when_chromium_launch_fails(self):
-        with (
-            patch("src.auth.browser_login._detect_real_display", return_value=7),
-            patch(
-                "src.auth.browser_login.async_playwright",
-                side_effect=RuntimeError("no playwright"),
+                "src.auth.browser_login._mint_integrity_token_plain",
+                new=AsyncMock(side_effect=RuntimeError("Chrome debug endpoint never came up")),
             ),
         ):
             result = await acquire_integrity_token("token123", "device-abc")
@@ -186,7 +100,6 @@ class TestAcquireIntegrityToken(unittest.IsolatedAsyncioTestCase):
 
     async def test_tears_down_xvfb_when_it_spawned_one(self):
         expiry = datetime.now(timezone.utc) + timedelta(hours=4)
-        mock_cm, mock_browser, mock_context, _page = self._mock_playwright_stack(("itok", expiry))
         xvfb_proc = MagicMock()
 
         with (
@@ -197,9 +110,9 @@ class TestAcquireIntegrityToken(unittest.IsolatedAsyncioTestCase):
                 new=AsyncMock(return_value=xvfb_proc),
             ),
             patch("src.auth.browser_login._wait_for_display", new=AsyncMock()),
-            patch("src.auth.browser_login.async_playwright", return_value=mock_cm),
+            patch("src.auth.browser_login._plain_chrome_binary", new=AsyncMock(return_value="chrome")),
             patch(
-                "src.auth.browser_login._capture_integrity_token",
+                "src.auth.browser_login._mint_integrity_token_plain",
                 new=AsyncMock(return_value=("itok", expiry)),
             ),
             patch(
@@ -213,6 +126,3 @@ class TestAcquireIntegrityToken(unittest.IsolatedAsyncioTestCase):
         mock_terminate.assert_awaited_once_with(xvfb_proc)
         mock_release.assert_called_once_with(92)
 
-
-if __name__ == "__main__":
-    unittest.main()

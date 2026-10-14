@@ -17,7 +17,7 @@ import subprocess
 import sys
 
 import socketio
-from fastapi import FastAPI, HTTPException, Request, WebSocket
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
@@ -33,6 +33,15 @@ _WEB_CONFIG_FILE = _DATA_DIR / "web_config.json"
 _BOT_TOKEN_FILE = _DATA_DIR / "discord_bot_token.json"
 _PAIRINGS_FILE = Path(__file__).parent.parent.parent / "discord_bot" / "pairings.json"
 _pair_codes: dict[str, dict] = {}  # code -> {token, expires}
+
+
+def _idle_watching_status(channel_name: str) -> str:
+    """Translated "Idle watching" status. The 💤 marker stays outside the
+    translation - the dashboard detects the idle state by it."""
+    from src.i18n.translator import _
+
+    text = _.t["status"].get("idle_watching", "Idle watching: {channel}")
+    return "💤 " + text.format(channel=channel_name)
 
 def _get_account_data_dir() -> Path:
     """Account-aware data dir — same logic as src.config.paths but importable here."""
@@ -247,6 +256,7 @@ _UNPROTECTED_PATHS = {
     "/api/instance",   # Instance info for switcher — public
     "/api/instances",  # Instances registry — public
     "/healthz",  # Docker/orchestrator liveness probe — must pass with no session
+    "/login-helper.py",  # login helper script for the dashboard's one-line command — public code
 }
 _UNPROTECTED_PREFIXES = ("/static/",)
 
@@ -543,7 +553,7 @@ async def _auto_resume_mode() -> None:
         if channel is not None:
             twitch_client.gui.clear_drop()
             twitch_client.watch(channel, update_status=False)
-            twitch_client.gui.status.update(f"💤 Idle watching: {channel.name}")
+            twitch_client.gui.status.update(_idle_watching_status(channel.name))
     except Exception:
         pass
 
@@ -627,12 +637,12 @@ async def setup_post(request: Request):
             return HTMLResponse(_setup_html(f'<p class="err">{_web_auth_strings()["error_password_required"]}</p>'))
         if pw != pw2:
             return HTMLResponse(_setup_html(f'<p class="err">{_web_auth_strings()["error_password_mismatch"]}</p>'))
-        _save_web_config({"setup_done": True, "password": pw})
+        _save_web_config({**_load_web_config(), "setup_done": True, "password": pw})
         resp = RedirectResponse("/", status_code=303)
         resp.set_cookie("__tdm_session", _new_session_token(), httponly=True, samesite="lax", max_age=_SESSION_MAX_AGE_SECONDS)
         return resp
     else:
-        _save_web_config({"setup_done": True, "password": ""})
+        _save_web_config({**_load_web_config(), "setup_done": True, "password": ""})
         return RedirectResponse("/", status_code=303)
 
 
@@ -1086,7 +1096,7 @@ async def idle_watch_switch():
         if channel is not None:
             twitch_client.gui.clear_drop()
             twitch_client.watch(channel, update_status=False)
-            twitch_client.gui.status.update(f"💤 Idle watching: {channel.name}")
+            twitch_client.gui.status.update(_idle_watching_status(channel.name))
             cfg2 = _load_web_config()
             cfg2["last_idle_channel"] = next_login
             _save_web_config(cfg2)
@@ -1107,7 +1117,7 @@ async def idle_watch_resume():
         if channel is not None:
             twitch_client.gui.clear_drop()
             twitch_client.watch(channel, update_status=False)
-            twitch_client.gui.status.update(f"💤 Idle watching: {channel.name}")
+            twitch_client.gui.status.update(_idle_watching_status(channel.name))
             return {"switched_to": last_channel, "resumed": True}
     return await idle_watch_switch()
 
@@ -1323,24 +1333,6 @@ async def cancel_browser_login():
     return {"success": True}
 
 
-@app.post("/api/login/device-code/start")
-async def start_device_code_login():
-    """Switch to the device-code login (no browser needed)."""
-    if twitch_client is None:
-        raise HTTPException(status_code=503, detail="Not initialized")
-    twitch_client._auth_state.request_device_code_login()
-    return {"success": True}
-
-
-@app.post("/api/login/device-code/cancel")
-async def cancel_device_code_login():
-    """Abandon a pending device code and go back to the browser login."""
-    if twitch_client is None:
-        raise HTTPException(status_code=503, detail="Not initialized")
-    twitch_client._auth_state.request_browser_login()
-    return {"success": True}
-
-
 class HelperSessionRequest(BaseModel):
     auth_token: str
     unique_id: str = ""
@@ -1369,98 +1361,15 @@ async def submit_helper_session(body: HelperSessionRequest):
 
 
 
-def _websocket_is_authenticated(websocket: WebSocket) -> bool:
-    """Mirrors PasswordAuthMiddleware's HTTP auth checks (see its dispatch()
-    above) for the one WebSocket route in this app. BaseHTTPMiddleware never
-    runs for `scope["type"] == "websocket"` connections, so every check that
-    middleware does for /api/ routes has to be repeated here explicitly --
-    this route is not implicitly covered by it."""
-    if not _is_setup_done():
-        return False
-    bot_token_header = websocket.headers.get("X-Bot-Token", "")
-    saved_bot_token = _get_bot_token()
-    if saved_bot_token and secrets.compare_digest(bot_token_header, saved_bot_token):
-        return True
-    pw = _get_password()
-    if not pw:
-        return True
-    fleet_pw_header = websocket.headers.get("X-Fleet-Password", "")
-    if fleet_pw_header and secrets.compare_digest(fleet_pw_header, pw):
-        return True
-    session = websocket.cookies.get("__tdm_session", "")
-    return _session_valid(session)
+_LOGIN_HELPER_PATH = Path(__file__).resolve().parents[2] / "scripts" / "tdm_login_helper.py"
 
 
-@app.websocket("/api/login/browser/ws")
-async def browser_login_websocket(websocket: WebSocket):
-    """Proxy raw bytes between the dashboard's noVNC client and the
-    in-progress browser login session's local x11vnc port.
-
-    All checks below run BEFORE accept() -- Starlette's WebSocket.close()
-    is valid pre-accept (it sends a "websocket.close" ASGI message while
-    still in the CONNECTING state, refusing the handshake outright) and
-    never actually establishes a connection with an unauthenticated or
-    cross-origin caller.
-    """
-    origin = websocket.headers.get("origin")
-    host = websocket.headers.get("host")
-    if origin not in (f"http://{host}", f"https://{host}"):
-        await websocket.close(code=1008)
-        return
-    if not _websocket_is_authenticated(websocket):
-        await websocket.close(code=1008)
-        return
-    # The auth flow (src/auth/auth_state.py's _browser_login) publishes the
-    # one manager it is driving here -- this route must never construct or
-    # consult its own.
-    manager = browser_login.get_active_manager()
-    port = manager.websocket_port if manager is not None else None
-    if port is None:
-        await websocket.close(code=4404)
-        return
-
-    await websocket.accept()
-    reader, writer = await asyncio.open_connection("localhost", port)
-
-    async def pump_upstream():
-        try:
-            while True:
-                data = await websocket.receive_bytes()
-                writer.write(data)
-                await writer.drain()
-        except Exception:
-            pass
-
-    async def pump_downstream():
-        try:
-            while True:
-                data = await reader.read(65536)
-                if not data:
-                    break
-                await websocket.send_bytes(data)
-        except Exception:
-            pass
-
-    # FIRST_COMPLETED, not gather: when the client goes away pump_upstream
-    # ends immediately, but pump_downstream stays parked in reader.read()
-    # forever -- x11vnc runs with -forever and sends nothing at all on a
-    # static screen, so a gather() here would hold the handler and its TCP
-    # connection to x11vnc open until the whole login session is torn
-    # down. The frontend's 2s reconnect loop would then stack up one such
-    # zombie per retry across the 10-minute login window.
-    tasks = [asyncio.create_task(pump_upstream()), asyncio.create_task(pump_downstream())]
-    try:
-        _done, pending = await asyncio.wait(tasks, return_when=asyncio.FIRST_COMPLETED)
-        for task in pending:
-            task.cancel()
-        if pending:
-            await asyncio.gather(*pending, return_exceptions=True)
-    finally:
-        writer.close()
-        try:
-            await writer.wait_closed()
-        except Exception:
-            pass
+@app.get("/login-helper.py")
+async def login_helper_script():
+    """The login helper, for the one-line command the dashboard shows on
+    headless hosts. Public code without secrets, so it needs no dashboard
+    login; the session it POSTs back is password-protected as usual."""
+    return Response(_LOGIN_HELPER_PATH.read_text(encoding="utf-8"), media_type="text/x-python; charset=utf-8")
 
 
 @app.post("/api/reload")

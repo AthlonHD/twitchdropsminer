@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import signal
+import os
 import sys
 import traceback
 import warnings
@@ -10,6 +11,14 @@ from logging.handlers import TimedRotatingFileHandler
 from pathlib import Path
 
 import truststore
+
+
+def _log_file_name() -> str:
+    """TDM.log for the default instance; several instances of one install
+    (TDM_PORT=8082 ...) each get their own file instead of interleaving."""
+    port = os.environ.get("TDM_PORT", "").strip()
+    return f"TDM-{port}.log" if port and port != "8080" else "TDM.log"
+
 
 
 if __name__ == "__main__":
@@ -35,10 +44,10 @@ if __name__ == "__main__":
     # scattered logs across unrelated locations depending on how it was launched.
     logs_dir = Path(__file__).parent.parent / "logs"
     logs_dir.mkdir(exist_ok=True)
-    log_file = logs_dir / "TDM.log"
+    log_file = logs_dir / _log_file_name()
 
     # Add file handler for timestamped log
-    file_handler = TimedRotatingFileHandler(log_file, when="midnight", backupCount=5)
+    file_handler = TimedRotatingFileHandler(log_file, when="midnight", backupCount=5, encoding="utf-8")
     file_handler.setFormatter(FILE_FORMATTER)
     logger.addHandler(file_handler)
 

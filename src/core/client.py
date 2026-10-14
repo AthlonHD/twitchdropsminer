@@ -396,7 +396,10 @@ class Twitch:
                         self._idle_channels_set = set(idle_chs)
                         names = ", ".join(ch.name for ch in idle_chs)
                         logger.info(f"Idle watch: watching {len(idle_chs)} channel(s): {names}")
-                        self.gui.status.update(f"💤 Idle: {names}")
+                        # the 💤 marker stays outside the translation: the dashboard detects idle state by it
+                        self.gui.status.update(
+                            "💤 " + _.t["status"].get("idle", "Idle: {channels}").format(channels=names)
+                        )
                         # Use first channel as primary for display/watch_loop
                         self.watch(idle_chs[0], update_status=False)
                         idle_topics: list[WebsocketTopic] = [

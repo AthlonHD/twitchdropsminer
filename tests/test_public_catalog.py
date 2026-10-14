@@ -43,6 +43,21 @@ class TestParseCatalog(unittest.TestCase):
     def test_stale_feed_rejected(self):
         self.assertEqual(parse_catalog(_payload("2026-10-05T10:00:00Z"), NOW), [])
 
+    def test_box_art_taken_from_the_group(self):
+        # The live feed carries box art only per game group (gameBoxArtURL),
+        # never on a reward's own game object.
+        art = "https://static-cdn.jtvnw.net/ttv-boxart/66170_IGDB-120x160.jpg"
+        payload = {"lastUpdatedAt": "2026-10-05T11:59:00Z",
+                   "data": [{"gameBoxArtURL": art, "rewards": [_rec("a")]}]}
+        (camp,) = parse_catalog(payload, NOW)
+        self.assertEqual(camp["game"]["boxArtURL"], art)
+
+    def test_group_box_art_still_https_only(self):
+        payload = {"lastUpdatedAt": "2026-10-05T11:59:00Z",
+                   "data": [{"gameBoxArtURL": "javascript:alert(1)", "rewards": [_rec("a")]}]}
+        (camp,) = parse_catalog(payload, NOW)
+        self.assertEqual(camp["game"]["boxArtURL"], "")
+
     def test_garbage_rejected(self):
         self.assertEqual(parse_catalog({"nope": 1}, NOW), [])
         self.assertEqual(parse_catalog(None, NOW), [])
@@ -74,8 +89,6 @@ class TestInventoryFallback(unittest.IsolatedAsyncioTestCase):
         with (
             patch("src.services.inventory_service.fetch_public_campaigns",
                   AsyncMock(return_value=[_rec("a")])),
-            patch("src.services.inventory_service.discover_campaigns_via_browser",
-                  AsyncMock(return_value=[])),
         ):
             await service._fetch_inventory()
         (chunk_arg,), _kw = service.fetch_campaigns.call_args
@@ -162,7 +175,6 @@ class TestFeedBecomesCampaign(unittest.IsolatedAsyncioTestCase):
         service.fetch_campaigns = AsyncMock(return_value={})  # details come back null
         with (
             patch("src.services.inventory_service.fetch_public_campaigns", AsyncMock(return_value=[_rec("a")])),
-            patch("src.services.inventory_service.discover_campaigns_via_browser", AsyncMock(return_value=[])),
         ):
             await service._fetch_inventory()
         self.assertEqual([c.id for c in twitch._campaigns.values()] or list(twitch._campaigns), ["a"])

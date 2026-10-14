@@ -1,3 +1,4 @@
+import asyncio
 import unittest
 from unittest.mock import AsyncMock, MagicMock
 
@@ -32,12 +33,14 @@ class TestSettingsAPI(unittest.IsolatedAsyncioTestCase):
         mock_settings.inventory_filters = {}
         mock_settings.mining_benefits = {}
         mock_settings.games_to_watch = []
+        mock_settings.make_predictions = False
 
         mock_console = MagicMock()
         mock_callback = MagicMock()
 
         manager = SettingsManager(
-            mock_broadcaster, mock_settings, mock_console, on_change=mock_callback
+            mock_broadcaster, mock_settings, mock_console, on_change=mock_callback,
+            reload_debounce_seconds=0,
         )
 
         # 1. Update Inventory Filters (does NOT trigger callback per implementation)
@@ -52,6 +55,7 @@ class TestSettingsAPI(unittest.IsolatedAsyncioTestCase):
         # 2. Update Mining Benefits (SHOULD trigger callback)
         benefits = {"BADGE": False}
         manager.update_settings({"mining_benefits": benefits})
+        await asyncio.sleep(0.05)  # the reload is debounced onto the event loop
         mock_callback.assert_called_once()
         self.assertEqual(mock_settings.mining_benefits, benefits)
         mock_console.print.assert_called_with("Setting changed: mining_benefits = {'BADGE': False}")
@@ -60,6 +64,7 @@ class TestSettingsAPI(unittest.IsolatedAsyncioTestCase):
         # 3. Update Games to Watch (SHOULD trigger callback)
         games = ["Game 1"]
         manager.update_settings({"games_to_watch": games})
+        await asyncio.sleep(0.05)
         mock_callback.assert_called_once()
 
 

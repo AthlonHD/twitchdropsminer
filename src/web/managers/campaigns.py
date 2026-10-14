@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import time
 from typing import TYPE_CHECKING
 
 
@@ -22,6 +23,7 @@ class CampaignProgressManager:
         self._broadcaster = broadcaster
         self._current_drop: TimedDrop | None = None
         self._remaining_seconds: int = 0
+        self._last_update: float = 0.0
 
     def update(self, drop: TimedDrop | None, remaining_seconds: int):
         """Update the current drop progress and remaining time.
@@ -32,6 +34,7 @@ class CampaignProgressManager:
         """
         self._current_drop = drop
         self._remaining_seconds = remaining_seconds
+        self._last_update = time.monotonic()
         if drop:
             asyncio.create_task(
                 self._broadcaster.emit(
@@ -59,9 +62,12 @@ class CampaignProgressManager:
         """Check if the current progress minute is almost complete.
 
         Returns:
-            True if remaining seconds is at or below zero
+            True if remaining seconds is at or below zero, or no progress update
+            arrived for about a minute (remaining_seconds is the drop's whole
+            remaining time and never counts down, so without this the watch
+            loop's CurrentDrop poll only ran once the drop was finished)
         """
-        return self._remaining_seconds <= 0
+        return self._remaining_seconds <= 0 or time.monotonic() - self._last_update >= 50
 
     def get_current_drop(self) -> dict | None:
         """Get the current drop progress data for sending to newly connected clients.

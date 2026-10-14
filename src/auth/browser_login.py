@@ -1,27 +1,14 @@
-"""Server-side real-browser login for Twitch, replacing OAuth device-code auth.
+"""Twitch login and Client-Integrity minting with a plain (non-Playwright) Chrome.
 
-See docs/superpowers/specs/2026-09-29-server-side-browser-login-design.md
-for the full design rationale. In short: device-code login's only two
-still-functional client IDs (MOBILE_WEB, SMARTBOX) either get hard-rejected
-by the GQL gateway or mint a token Twitch scopes to a degraded campaign-
-visibility tier (issues #15-#18) -- intrinsic to how the token was minted,
-not fixable by any header/identity trick. A real www.twitch.tv/login
-session, captured via an actual browser, does not have this problem: it's
-the same kind of session a real logged-in user browsing Twitch normally
-gets.
+Login (BrowserLoginManager): on a host with a desktop, TDM opens a normal
+Chrome window on the Twitch login page and reads the session cookie from it;
+on a headless host it opens nothing and waits for the login helper
+(scripts/tdm_login_helper.py, served at /login-helper.py) to send the session.
+See docs/superpowers/specs/2026-10-14-simple-login-design.md.
 
-This module owns exactly one login attempt's lifecycle at a time: launch a
-virtual X display (Xvfb), a real (non-headless) Chromium inside it via
-Playwright, and an x11vnc server exposing that display so a browser-based
-noVNC client can drive it interactively. src/web/app.py's WS route speaks
-the noVNC/WebSocket side to the browser itself and relays raw bytes to/from
-x11vnc's plain VNC port directly -- no separate websockify process sits in
-between (websockify's own job, WS<->raw-TCP framing, is that route's job
-too; chaining a second one in front of x11vnc only added a redundant hop
-that expects its own WS handshake and drops a raw TCP client instantly).
-The caller (src/auth/auth_state.py's _browser_login) awaits wait_for_cookie()
-for the resulting session cookie, then always calls stop() regardless of
-outcome.
+Integrity tokens (acquire_integrity_token): a throwaway plain Chrome, under
+Xvfb on headless hosts, loads a Twitch page with the session cookies set and
+the token is read from the page's own /integrity response.
 """
 
 from __future__ import annotations
@@ -34,11 +21,12 @@ import os
 import re
 import signal
 import time
-import zoneinfo
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 
-from playwright.async_api import Browser, BrowserContext, Page, Playwright, async_playwright
+from playwright.async_api import async_playwright
+
+from src.auth.plain_chrome import PlainChrome
 
 logger = logging.getLogger("TwitchDrops")
 
@@ -46,9 +34,13 @@ LOGIN_URL = "https://www.twitch.tv/login"
 COOKIE_DOMAIN = "twitch.tv"
 COOKIE_NAME = "auth-token"
 DEVICE_ID_COOKIE_NAME = "unique_id"
+_IS_WINDOWS = os.name == "nt"
 DEFAULT_TIMEOUT_SEC = 600  # 10 minutes
 COOKIE_POLL_INTERVAL_SEC = 1.5
 CHROMIUM_LAUNCH_TIMEOUT_SEC = 30
+# Minting loads the full twitch.tv page in a fresh profile; a Raspberry Pi 3B+
+# needed over 30s for that (confirmed live), so this is generous on purpose.
+INTEGRITY_MINT_TIMEOUT_SEC = 90
 
 # Reserved ranges for this feature's own display/port numbers, used both to
 # pick a free one at start() and to recognize this app's own leftover
@@ -91,41 +83,22 @@ class BrowserLoginCancelled(Exception):
     """The login attempt was explicitly cancelled."""
 
 
-class BrowserLoginUnavailable(Exception):
-    """Required system dependencies (Xvfb/Chromium/x11vnc) are missing or
-    failed to start."""
-
-
 @dataclass
 class _BrowserLoginSession:
-    """Internal handle for one in-progress login attempt.
+    """One in-progress login attempt. `chrome` is the plain Chrome window
+    opened on a desktop host ("local" mode) or None on a headless host
+    ("remote" mode), where only the login helper can complete it."""
 
-    websocket_port/xvfb_process/x11vnc_process are None when the attempt
-    is running on a real, already-available desktop display instead of a
-    virtual one we spun up ourselves (see _detect_real_display) -- there's
-    nothing to proxy into a noVNC client because the login window is
-    directly visible on the host's own screen, not any process we need to
-    track for teardown.
-    """
-
-    display_number: int
-    websocket_port: int | None
-    playwright: Playwright
-    browser: Browser
-    context: BrowserContext
-    page: Page
-    xvfb_process: asyncio.subprocess.Process | None
-    x11vnc_process: asyncio.subprocess.Process | None
+    mode: str
+    chrome: PlainChrome | None
+    helper_cookies: dict[str, str] | None = None
+    submitted: asyncio.Event = field(default_factory=asyncio.Event)
     cancelled: asyncio.Event = field(default_factory=asyncio.Event)
 
 
 class BrowserLoginManager:
-    """Owns the lifecycle of a single real-browser Twitch login attempt.
-
-    Callers are responsible for serializing attempts (see _AuthState's own
-    lock) -- this class raises RuntimeError on a second concurrent start()
-    but does not itself queue or lock.
-    """
+    """Owns one Twitch login attempt. Callers serialize attempts (see
+    _AuthState's lock); a second concurrent start() raises RuntimeError."""
 
     def __init__(self) -> None:
         self._session: _BrowserLoginSession | None = None
@@ -134,190 +107,32 @@ class BrowserLoginManager:
     def in_progress(self) -> bool:
         return self._session is not None
 
-    @property
-    def websocket_port(self) -> int | None:
-        """x11vnc's local raw-VNC TCP port for the in-progress session, or
-        None if no session is active -- named for what src/web/app.py's WS
-        route does with it (proxies it to a noVNC WebSocket client), not
-        for the protocol spoken on the port itself, which is plain VNC.
-        Reading this instead of reaching into ._session avoids a TOCTOU
-        crash when stop() lands between an in_progress check and the port
-        read."""
-        session = self._session
-        return session.websocket_port if session is not None else None
-
-    async def start(self) -> int | None:
-        """Start a new login attempt.
-
-        If a real desktop display is already available (a home/NAS
-        deployment with DISPLAY passed through, not a headless VPS -- see
-        _detect_real_display), pops up an ordinary visible Chromium window
-        there directly: no Xvfb/x11vnc/noVNC involved, the user just looks
-        at their own screen. Otherwise falls back to a virtual display
-        proxied to the dashboard over noVNC, same as always.
-
-        Returns the local raw-VNC TCP port the caller should proxy (see
-        src/web/app.py's WS /api/login/browser/ws) for a noVNC client, or
-        None when the login window opened on a real display instead --
-        there is nothing to proxy.
-
-        Raises RuntimeError if a session is already in progress, or
-        BrowserLoginUnavailable if any required process/binary fails to
-        start.
-        """
+    async def start(self) -> str:
+        """Open a plain Chrome on the Twitch login page when this host has a
+        desktop ("local"), otherwise open nothing and wait for the login
+        helper ("remote"). Returns the mode."""
         if self._session is not None:
             raise RuntimeError("A browser login session is already in progress")
-
-        real_display = _detect_real_display()
-        if real_display is not None:
-            logger.info(f"Real desktop display :{real_display} detected; opening Chromium there directly")
-            return await self._start_on_display(real_display, xvfb_process=None)
-        display_number = _find_free_display_number()
-        xvfb_process = await self._spawn_xvfb_on(display_number)
-        return await self._start_on_display(display_number, xvfb_process=xvfb_process)
-
-    async def _spawn_xvfb_on(self, display_number: int) -> asyncio.subprocess.Process:
-        xvfb_process = await _start_tagged_process(
-            ["Xvfb", f":{display_number}", "-screen", "0", "1280x800x24"]
-        )
-        try:
-            await _wait_for_display(display_number)
-        except Exception as exc:
-            _terminate_process_group(xvfb_process)
-            # Without this, a display number this call claimed (see
-            # _find_free_display_number's caller) stays permanently burned
-            # on every failure -- confirmed live: ten straight failures
-            # (one per reserved slot) exhausts the whole range, and every
-            # subsequent attempt then fails immediately with "No free
-            # virtual display number in the reserved range", forever,
-            # until the process is restarted.
-            _release_display_number(display_number)
-            raise BrowserLoginUnavailable(f"Xvfb display :{display_number} never came up: {exc}") from exc
-        return xvfb_process
-
-    async def _start_on_display(
-        self, display_number: int, xvfb_process: asyncio.subprocess.Process | None
-    ) -> int | None:
-        """Shared by both start() paths from here on: launch Chromium
-        against `display_number` (already up either way -- a real desktop
-        or the Xvfb _spawn_xvfb_on already waited for) and, only when
-        xvfb_process is not None (the virtual-display path), also start
-        x11vnc and report its port. `xvfb_process` doubles as the flag for
-        which path this is."""
-        env = dict(os.environ)
-        env["DISPLAY"] = f":{display_number}"
-
-        def cleanup_xvfb() -> None:
-            if xvfb_process is not None:
-                _terminate_process_group(xvfb_process)
-                # Same leak as _spawn_xvfb_on's own failure path (see its
-                # comment): every one of these downstream failure branches
-                # (Playwright/Chromium/navigation/x11vnc) also claimed this
-                # display number and must release it too, or it's
-                # permanently gone the same way.
-                _release_display_number(display_number)
-
-        try:
-            playwright = await async_playwright().start()
-        except Exception as exc:
-            cleanup_xvfb()
-            raise BrowserLoginUnavailable(f"Failed to start Playwright: {exc}") from exc
-
-        try:
-            browser = await asyncio.wait_for(
-                playwright.chromium.launch(
-                    headless=False,
-                    args=["--no-sandbox", "--disable-dev-shm-usage"],
-                    env=env,
-                ),
-                timeout=CHROMIUM_LAUNCH_TIMEOUT_SEC,
-            )
-        except Exception as exc:
-            await playwright.stop()
-            cleanup_xvfb()
-            raise BrowserLoginUnavailable(f"Failed to launch Chromium: {exc}") from exc
-
-        try:
-            # A container/VPS defaults to UTC (or whatever the host happens
-            # to run), which mismatches the real timezone of wherever the
-            # account normally logs in from -- rangermix's team hit this
-            # exact "Your browser is not currently supported" rejection
-            # with their own containerized Twitch login and documented TZ
-            # as the fix (github.com/rangermix/TwitchDropsMiner issue
-            # #148). Reuse the same TZ env var Docker users already set
-            # for the whole container for this reason, passed through
-            # Playwright's own timezone_id (reliably changes what the
-            # page's JS sees, unlike hoping Chromium's ICU/V8 picks up an
-            # OS-level TZ change on a running process). Harmless on a real
-            # desktop display too, where it's already correct anyway.
-            # Validated first (_resolve_timezone_id) -- an invalid value
-            # passed straight through used to make every single retry fail
-            # identically forever, since Playwright rejects a bad
-            # timezone_id at new_page() and the env var never changes.
-            context = await browser.new_context(timezone_id=_resolve_timezone_id())
-            # Playwright's CDP automation flag makes navigator.webdriver
-            # true regardless of headless/headful, which is what actually
-            # triggers Twitch's "Your browser is not currently supported"
-            # banner on the real login form (confirmed live: with this,
-            # the same login page renders normally). This is cosmetic --
-            # it just presents as an ordinary Chromium tab to the page's
-            # own JS, the same as a real browser -- not a change to
-            # Twitch's server-side login flow itself.
-            await context.add_init_script(
-                "Object.defineProperty(navigator, 'webdriver', { get: () => undefined });"
-            )
-            page = await context.new_page()
-            await page.goto(LOGIN_URL, wait_until="domcontentloaded")
-        except Exception as exc:
-            await browser.close()
-            await playwright.stop()
-            cleanup_xvfb()
-            raise BrowserLoginUnavailable(f"Failed to navigate to Twitch login page: {exc}") from exc
-
-        vnc_port: int | None = None
-        x11vnc_process: asyncio.subprocess.Process | None = None
-        if xvfb_process is not None:
-            offset = display_number - DISPLAY_NUMBER_RANGE_START
-            vnc_port = VNC_PORT_RANGE_START + offset
+        display = _detect_real_display()
+        if display is not None:
+            env = None if _IS_WINDOWS else {**os.environ, "DISPLAY": f":{display}"}
             try:
-                x11vnc_process = await _start_tagged_process(
-                    [
-                        "x11vnc",
-                        "-display", f":{display_number}",
-                        "-rfbport", str(vnc_port),
-                        "-localhost", "-nopw", "-forever", "-shared", "-quiet",
-                    ]
-                )
+                chrome = PlainChrome(await _plain_chrome_binary(), LOGIN_URL, env, no_sandbox=_needs_no_sandbox())
+                await chrome.start()
             except Exception as exc:
-                await browser.close()
-                await playwright.stop()
-                cleanup_xvfb()
-                raise BrowserLoginUnavailable(f"Failed to start x11vnc: {exc}") from exc
-
-        self._session = _BrowserLoginSession(
-            display_number=display_number,
-            websocket_port=vnc_port,
-            playwright=playwright,
-            browser=browser,
-            context=context,
-            page=page,
-            xvfb_process=xvfb_process,
-            x11vnc_process=x11vnc_process,
-        )
-        if vnc_port is not None:
-            logger.info(f"Browser login session started on display :{display_number}, vnc port {vnc_port}")
-        else:
-            logger.info(f"Browser login session started on real display :{display_number}")
-        return vnc_port
+                logger.warning(f"Could not open a login browser on this desktop ({exc}); waiting for the login helper")
+            else:
+                self._session = _BrowserLoginSession("local", chrome)
+                logger.info("Opened a browser window for the Twitch login on this computer")
+                return "local"
+        self._session = _BrowserLoginSession("remote", None)
+        logger.info("Waiting for the login helper to send a Twitch session")
+        return "remote"
 
     async def wait_for_cookie(self, timeout: float = DEFAULT_TIMEOUT_SEC) -> dict[str, str]:
-        """Poll the live browser context's cookies until a real auth-token
-        cookie appears. Does NOT tear down the session on any outcome --
-        the caller must call stop() afterward regardless.
-
-        Raises BrowserLoginTimeout if no cookie appears in time, or
-        BrowserLoginCancelled if cancel() was called meanwhile.
-        """
+        """Wait for the session cookies from the local window or the helper.
+        Raises BrowserLoginTimeout, or BrowserLoginCancelled on cancel() or
+        when the user closed the local window. Never tears the session down."""
         if self._session is None:
             raise RuntimeError("start() must be called before wait_for_cookie()")
         session = self._session
@@ -325,139 +140,45 @@ class BrowserLoginManager:
         while True:
             if session.cancelled.is_set():
                 raise BrowserLoginCancelled()
-            cookies = await session.context.cookies()
-            found = {c["name"]: c["value"] for c in cookies if c["domain"].endswith(COOKIE_DOMAIN)}
-            if COOKIE_NAME in found:
-                return {
-                    "auth-token": found[COOKIE_NAME],
-                    "unique_id": found.get(DEVICE_ID_COOKIE_NAME, ""),
-                }
+            if session.helper_cookies is not None:
+                return session.helper_cookies
+            if session.chrome is not None:
+                try:
+                    found = await session.chrome.cookies(COOKIE_DOMAIN)
+                except Exception:
+                    found = {}
+                if found.get(COOKIE_NAME):
+                    return {"auth-token": found[COOKIE_NAME], "unique_id": found.get(DEVICE_ID_COOKIE_NAME, "")}
+                if not session.chrome.alive:
+                    raise BrowserLoginCancelled()
             remaining = deadline - time.monotonic()
             if remaining <= 0:
                 raise BrowserLoginTimeout()
-            try:
-                await asyncio.wait_for(
-                    session.cancelled.wait(), timeout=min(COOKIE_POLL_INTERVAL_SEC, remaining)
-                )
-                raise BrowserLoginCancelled()
-            except asyncio.TimeoutError:
-                continue
-
-    async def captured_integrity_token(self) -> tuple[str, datetime] | None:
-        """The Client-Integrity token for this session's now-authenticated
-        account, captured by navigating the session's own already-open
-        page to a page that needs one -- call this once, after
-        wait_for_cookie() has already succeeded (so there's an actual
-        account to navigate as). Deliberately NOT captured earlier, off
-        the anonymous login-page load itself: that would race a real
-        human's login time (credentials, 2FA, CAPTCHA can easily run past
-        a short capture window) and a token minted before any account was
-        attached to the session is a different, weaker thing than one
-        minted for the authenticated account these GQL requests actually
-        need it for.
-
-        None if no session is active or nothing arrived in time -- never
-        raises."""
-        session = self._session
-        if session is None:
-            return None
-        try:
-            await session.page.goto(
-                "https://www.twitch.tv/drops/campaigns", wait_until="domcontentloaded"
-            )
-        except Exception as exc:
-            logger.warning(f"Integrity token capture: failed to navigate to the campaigns page: {exc}")
-            return None
-        return await _capture_integrity_token(session.page)
+            waiters = [asyncio.ensure_future(session.submitted.wait()), asyncio.ensure_future(session.cancelled.wait())]
+            await asyncio.wait(waiters, timeout=min(COOKIE_POLL_INTERVAL_SEC, remaining), return_when=asyncio.FIRST_COMPLETED)
+            for waiter in waiters:
+                waiter.cancel()
 
     async def inject_session_from_helper(self, auth_token: str, unique_id: str) -> None:
-        """Supply the login cookies directly instead of waiting for them to
-        appear from the in-browser session -- for the login helper script
-        (scripts/tdm_login_helper.py): it drives the user's own real,
-        already-installed Chrome on their own device (a real residential
-        IP/browser, which Twitch's integrity check treats as an ordinary
-        login, unlike this app's own server-side Chromium on a flagged
-        datacenter IP) and POSTs the resulting cookies here automatically.
-        wait_for_cookie()'s poll loop picks these up on its next tick
-        exactly as if the in-browser login had just completed itself, so
-        nothing else about the success path (token validation,
-        persistence, teardown) changes.
-
-        Raises RuntimeError if no session is in progress.
-        """
+        """The login helper (scripts/tdm_login_helper.py) logged in with the
+        user's own Chrome on their own device and sent the session here."""
         if self._session is None:
             raise RuntimeError("No browser login session is in progress")
-        cookies = [{"name": COOKIE_NAME, "value": auth_token, "domain": f".{COOKIE_DOMAIN}", "path": "/"}]
-        if unique_id:
-            cookies.append(
-                {"name": DEVICE_ID_COOKIE_NAME, "value": unique_id, "domain": f".{COOKIE_DOMAIN}", "path": "/"}
-            )
-        await self._session.context.add_cookies(cookies)
+        self._session.helper_cookies = {"auth-token": auth_token, "unique_id": unique_id}
+        self._session.submitted.set()
 
     def cancel(self) -> None:
-        """Signal the in-progress attempt (if any) to stop waiting."""
         if self._session is not None:
             self._session.cancelled.set()
 
     async def stop(self) -> None:
-        """Tear down every process/resource for the current session, if
-        any. Safe to call multiple times, and after a failed start()."""
+        """Close the local window, if any. Safe to call repeatedly."""
         session = self._session
         self._session = None
-        if session is None:
-            return
-        try:
-            await session.browser.close()
-        except Exception as exc:
-            logger.warning(f"Error closing browser login's browser: {exc}")
-        try:
-            await session.playwright.stop()
-        except Exception as exc:
-            logger.warning(f"Error stopping browser login's playwright: {exc}")
-        # Graceful (SIGTERM, brief grace period) before SIGKILL -- x11vnc
-        # needs the chance to release its SysV shm segment on exit, see
-        # _terminate_process_group_gracefully's docstring. Xvfb torn down
-        # the same way for consistency, though it isn't the one observed
-        # leaking. Both are None on a real-display session (see
-        # _detect_real_display) -- there's nothing of ours to kill, and
-        # critically, _release_display_number must NOT run below either:
-        # that display is the host's own real desktop, not one we created,
-        # and deleting its live X11 socket/lock would break it.
-        for proc in (session.x11vnc_process, session.xvfb_process):
-            if proc is not None:
-                await _terminate_process_group_gracefully(proc)
-        if session.xvfb_process is not None:
-            _release_display_number(session.display_number)
-        logger.info(f"Browser login session on display :{session.display_number} torn down")
+        if session is not None and session.chrome is not None:
+            await session.chrome.close()
 
 
-def _resolve_timezone_id() -> str | None:
-    """The TZ env var, validated against the IANA tz database, or None if
-    it's unset/empty/malformed.
-
-    A bad value here used to be fatal and permanent: Playwright rejects an
-    invalid timezone_id at new_page() time, which previously surfaced as
-    BrowserLoginUnavailable on every single retry forever (the value never
-    changes, so neither does the outcome) -- reported live as "{Europe/
-    Berlin}" (literal braces and all) from a host whose deployment config
-    had mangled the env var. Validating here means a malformed TZ degrades
-    to "no override" (UTC) instead of permanently blocking login.
-    """
-    tz = os.environ.get("TZ", "").strip()
-    if not tz:
-        return None
-    try:
-        zoneinfo.ZoneInfo(tz)
-    except (zoneinfo.ZoneInfoNotFoundError, ValueError):
-        logger.warning(
-            f"TZ env var {tz!r} is not a valid IANA timezone -- ignoring it for the "
-            "login browser (login will proceed without a timezone override)"
-        )
-        return None
-    return tz
-
-
-INTEGRITY_CAPTURE_TIMEOUT_SEC = 15.0
 INTEGRITY_DEFAULT_TTL = timedelta(hours=4)
 
 
@@ -478,63 +199,13 @@ def _decode_jwt_expiry(token: str) -> datetime:
     return datetime.now(timezone.utc) + INTEGRITY_DEFAULT_TTL
 
 
-async def _capture_integrity_token(page) -> tuple[str, datetime] | None:
-    """Watch `page` for the Client-Integrity token Twitch's own JS mints by
-    POSTing to gql.twitch.tv/integrity -- confirmed live to fire on a
-    normal twitch.tv page load, real browser or not. Call this BEFORE
-    navigating (goto), not after, or the response may already have come
-    and gone. Returns (token, expiry) or None if nothing arrived within
-    INTEGRITY_CAPTURE_TIMEOUT_SEC.
-    """
-    captured: dict[str, str] = {}
-
-    async def on_response(response) -> None:
-        if "token" in captured:
-            return
-        if "gql.twitch.tv" not in response.url or not response.url.rstrip("/").endswith("/integrity"):
-            return
-        try:
-            data = await response.json()
-        except Exception:
-            return
-        token = data.get("token")
-        if token:
-            captured["token"] = token
-
-    page.on("response", on_response)
-    try:
-        deadline = time.monotonic() + INTEGRITY_CAPTURE_TIMEOUT_SEC
-        while "token" not in captured and time.monotonic() < deadline:
-            await asyncio.sleep(0.1)
-    finally:
-        page.remove_listener("response", on_response)
-
-    token = captured.get("token")
-    if not token:
-        return None
-    return token, _decode_jwt_expiry(token)
-
-
 async def acquire_integrity_token(auth_token: str, device_id: str) -> tuple[str, datetime] | None:
-    """Mint a fresh Client-Integrity token using a real, throwaway Chromium
-    session authenticated with the already-logged-in account's own
-    cookies -- no interactive login needed, just the same launch
-    configuration BrowserLoginManager.start() already uses successfully
-    for the real thing.
-
-    Replaces the old streamlink-based approach (formerly src/auth/
-    integrity.py): that one's headful Chromium never opened its own CDP
-    debug port in this environment, confirmed by direct testing, even
-    after patching --no-sandbox into its launch args. This module's own
-    Playwright-based Chromium launch is the one already proven to work
-    reliably here (it's what the real-browser login itself runs on), so
-    reuse that instead of a separate toolchain for the identical "drive a
-    real browser past Twitch's integrity check" problem.
+    """Mint a fresh Client-Integrity token in a throwaway plain Chrome (see
+    _mint_integrity_token_plain), under Xvfb when this host has no desktop.
 
     Best-effort: returns None on any failure (never raises) -- the caller
-    (_AuthState._ensure_integrity_token) already treats a missing token as
-    "proceed without the header, try again later", exactly as it did for
-    the old approach's failures.
+    (_AuthState._ensure_integrity_token) treats a missing token as "proceed
+    without the header, try again later".
     """
     real_display = _detect_real_display()
     xvfb_process: asyncio.subprocess.Process | None = None
@@ -556,50 +227,111 @@ async def acquire_integrity_token(auth_token: str, device_id: str) -> tuple[str,
 
     env = dict(os.environ)
     env["DISPLAY"] = f":{display_number}"
-    playwright: Playwright | None = None
-    browser: Browser | None = None
     try:
-        try:
-            playwright = await async_playwright().start()
-            browser = await asyncio.wait_for(
-                playwright.chromium.launch(
-                    headless=False,
-                    args=["--no-sandbox", "--disable-dev-shm-usage"],
-                    env=env,
-                ),
-                timeout=CHROMIUM_LAUNCH_TIMEOUT_SEC,
-            )
-        except Exception as exc:
-            logger.warning(f"Integrity token acquisition: failed to launch Chromium: {exc}")
-            return None
-
-        try:
-            context = await browser.new_context(timezone_id=_resolve_timezone_id())
-            await context.add_init_script(
-                "Object.defineProperty(navigator, 'webdriver', { get: () => undefined });"
-            )
-            cookies = [{"name": COOKIE_NAME, "value": auth_token, "domain": f".{COOKIE_DOMAIN}", "path": "/"}]
-            if device_id:
-                cookies.append(
-                    {"name": DEVICE_ID_COOKIE_NAME, "value": device_id, "domain": f".{COOKIE_DOMAIN}", "path": "/"}
-                )
-            await context.add_cookies(cookies)
-            page = await context.new_page()
-            capture_task = asyncio.ensure_future(_capture_integrity_token(page))
-            await page.goto("https://www.twitch.tv/drops/campaigns", wait_until="domcontentloaded")
-            return await capture_task
-        except Exception as exc:
-            logger.warning(f"Integrity token acquisition: failed during page capture: {exc}")
-            return None
+        return await _mint_integrity_token_plain(await _plain_chrome_binary(), env, auth_token, device_id)
+    except Exception as exc:
+        logger.warning(f"Integrity token acquisition failed: {exc}")
+        return None
     finally:
-        if browser is not None:
-            await browser.close()
-        if playwright is not None:
-            await playwright.stop()
         if xvfb_process is not None:
             await _terminate_process_group_gracefully(xvfb_process)
             _release_display_number(display_number)
 
+
+def _needs_no_sandbox() -> bool:
+    """Chrome refuses to start as root (e.g. in the Docker image) unless its
+    sandbox is disabled; everywhere else keep it, so a visible login window
+    shows no "unsupported command-line flag" bar."""
+    return not _IS_WINDOWS and os.geteuid() == 0
+
+
+async def _plain_chrome_binary() -> str:
+    """The installed Google Chrome (or Edge, which every Windows has) on
+    Windows, else Playwright's own Chromium binary -- either way launched as
+    a plain process, not through Playwright."""
+    if _IS_WINDOWS:
+        for vendor, app, exe in (("Google", "Chrome", "chrome.exe"), ("Microsoft", "Edge", "msedge.exe")):
+            for base in (os.environ.get("PROGRAMFILES"), os.environ.get("PROGRAMFILES(X86)"), os.environ.get("LOCALAPPDATA")):
+                path = os.path.join(base or "", vendor, app, "Application", exe)
+                if base and os.path.exists(path):
+                    return path
+    async with async_playwright() as playwright:
+        return playwright.chromium.executable_path
+
+
+
+def _session_cookies(auth_token: str, device_id: str) -> list[dict]:
+    """Session cookies for a plain Chrome to start out logged in. auth-token
+    must NOT be httpOnly (Twitch's own isn't): the page's JS reads it, and
+    without it the page stays anonymous and mints an anonymous integrity
+    token that fails dropCampaign the same way no token does."""
+    cookies = [{"name": COOKIE_NAME, "value": auth_token, "domain": f".{COOKIE_DOMAIN}",
+                "path": "/", "secure": True}]
+    if device_id:
+        cookies.append({"name": DEVICE_ID_COOKIE_NAME, "value": device_id,
+                        "domain": f".{COOKIE_DOMAIN}", "path": "/", "secure": True})
+    return cookies
+
+
+async def _mint_integrity_token_plain(
+    binary: str, env: dict[str, str], auth_token: str, device_id: str
+) -> tuple[str, datetime] | None:
+    """Mint a Client-Integrity token in a plain, non-automated Chrome.
+
+    Tokens minted in a Playwright-driven browser come back but are rejected
+    on dropCampaign ("failed integrity check") -- confirmed live, with any
+    headers and either Chromium build -- while one minted by the same
+    account in a plain Chrome passes, even with the app's own GQL headers.
+    So: start Chrome normally with a throwaway profile and a debug port,
+    set the session cookies browser-side, and only read network traffic
+    (CDP Network domain, no Runtime/JS injection) to pick up Twitch's own
+    /integrity response.
+    """
+    chrome = PlainChrome(binary, "about:blank", env, no_sandbox=_needs_no_sandbox())
+    await chrome.start()
+    try:
+        await chrome.call("Storage.setCookies", {"cookies": _session_cookies(auth_token, device_id)})
+        targets = (await chrome.call("Target.getTargets"))["result"]["targetInfos"]
+        target = next(t for t in targets if t["type"] == "page")
+        session = (
+            await chrome.call("Target.attachToTarget", {"targetId": target["targetId"], "flatten": True})
+        )["result"]["sessionId"]
+        await chrome.call("Network.enable", {}, session)
+        await chrome.call("Page.navigate", {"url": "https://www.twitch.tv/drops/campaigns"}, session)
+
+        integrity_requests: set[str] = set()
+        authorized = False
+        started = time.monotonic()
+        deadline = started + INTEGRITY_MINT_TIMEOUT_SEC
+        while time.monotonic() < deadline:
+            try:
+                event = await chrome.next_event(timeout=max(deadline - time.monotonic(), 0.1))
+            except asyncio.TimeoutError:
+                break
+            method, params = event.get("method"), event.get("params", {})
+            if method == "Network.requestWillBeSent":
+                request = params["request"]
+                if request["url"].startswith("https://gql.twitch.tv/integrity") and request.get("method") == "POST":
+                    integrity_requests.add(params["requestId"])
+                    # An anonymous page (no Authorization) mints a token
+                    # that fails dropCampaign -- worth seeing in the log.
+                    authorized = any(k.lower() == "authorization" for k in request.get("headers", {}))
+            elif method == "Network.loadingFinished" and params.get("requestId") in integrity_requests:
+                body = await chrome.call("Network.getResponseBody", {"requestId": params["requestId"]}, session)
+                token = json.loads(body.get("result", {}).get("body") or "{}").get("token")
+                if token:
+                    logger.info(
+                        f"Client-Integrity token minted in {time.monotonic() - started:.0f}s "
+                        f"(page logged in: {authorized})"
+                    )
+                    return token, _decode_jwt_expiry(token)
+        logger.warning(
+            f"Integrity token acquisition: no token within {INTEGRITY_MINT_TIMEOUT_SEC}s "
+            f"(integrity request seen: {bool(integrity_requests)})"
+        )
+        return None
+    finally:
+        await chrome.close()
 
 def _detect_real_display() -> int | None:
     """If a real desktop display is already available -- a home/NAS
@@ -612,6 +344,9 @@ def _detect_real_display() -> int | None:
     to download or run -- it's already the same machine). None if nothing
     usable is found, which is the common case on a VPS.
     """
+    if _IS_WINDOWS:
+        # Windows always has a real desktop and no X11 (no DISPLAY, no Xvfb).
+        return 0
     display_env = os.environ.get("DISPLAY", "").strip()
     if not display_env.startswith(":"):
         return None
@@ -637,7 +372,7 @@ def _find_free_display_number() -> int:
         candidate = DISPLAY_NUMBER_RANGE_START + offset
         if not os.path.exists(f"/tmp/.X{candidate}-lock"):
             return candidate
-    raise BrowserLoginUnavailable("No free virtual display number in the reserved range")
+    raise RuntimeError("No free virtual display number in the reserved range")
 
 
 def _release_display_number(display_number: int) -> None:
