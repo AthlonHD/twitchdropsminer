@@ -86,6 +86,23 @@ class BaseDrop:
     def _on_state_changed(self) -> None:
         raise NotImplementedError
 
+    @property
+    def excluded(self) -> bool:
+        # The user doesn't want this drop. Watching its game still earns it
+        # minutes (Twitch credits every running campaign of that game), so it
+        # is kept out of "the drop we're mining" and never auto-claimed --
+        # unless a wanted drop needs it claimed first to unlock.
+        settings = self._twitch.settings
+        name = self.name.lower()
+        unwanted = (
+            self.campaign.ignored
+            or self.id in getattr(settings, "blacklisted_drop_ids", [])
+            or any(kw.strip() and kw.lower() in name for kw in getattr(settings, "drop_name_blacklist", []))
+        )
+        return unwanted and all(
+            drop.excluded for drop in self.campaign.drops if self.id in drop.precondition_drops
+        )
+
     def _base_earn_conditions(self) -> bool:
         # define when a drop can be earned or not
         return (
@@ -151,6 +168,9 @@ class BaseDrop:
         return [benefit.name for benefit in self.benefits if benefit.is_wanted(allowed_benefits)]
 
     async def claim(self) -> bool:
+        if self.excluded:
+            logger.info(f"Not claiming blacklisted/ignored drop: {self.name} ({self.id})")
+            return False
         result = await self._claim()
         if result:
             self.is_claimed = result
