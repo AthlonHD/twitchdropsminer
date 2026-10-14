@@ -140,6 +140,8 @@ class TestSweepOrphanedProcesses(unittest.IsolatedAsyncioTestCase):
             patch("asyncio.create_subprocess_exec", new=self._fake_pgrep(table)),
             patch("src.auth.browser_login.os.kill", side_effect=kill_side_effect) as mock_kill,
             patch("src.auth.browser_login._release_display_number") as mock_release,
+            # A real orphan was re-parented to init when its TDM process died.
+            patch("src.auth.browser_login._parent_pid", return_value=1),
         ):
             killed = await sweep_orphaned_processes()
 
@@ -155,6 +157,21 @@ class TestSweepOrphanedProcesses(unittest.IsolatedAsyncioTestCase):
             patch("asyncio.create_subprocess_exec", new=self._fake_pgrep(self.NOT_OURS)),
             patch("src.auth.browser_login.os.kill") as mock_kill,
             patch("src.auth.browser_login._release_display_number") as mock_release,
+        ):
+            killed = await sweep_orphaned_processes()
+
+        self.assertEqual(killed, 0)
+        mock_kill.assert_not_called()
+        mock_release.assert_not_called()
+
+    async def test_spares_processes_another_running_instance_still_owns(self):
+        # Two instances on one host (pm2 tdm + tdm2): the second one's
+        # startup sweep killed the first one's Xvfb mid-mint (seen live).
+        with (
+            patch("asyncio.create_subprocess_exec", new=self._fake_pgrep(self.OURS)),
+            patch("src.auth.browser_login.os.kill") as mock_kill,
+            patch("src.auth.browser_login._release_display_number") as mock_release,
+            patch("src.auth.browser_login._parent_pid", return_value=4242),
         ):
             killed = await sweep_orphaned_processes()
 

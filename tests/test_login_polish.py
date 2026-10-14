@@ -67,6 +67,21 @@ class TestWindowsTriesEdgeBeforeBundledChromium(unittest.IsolatedAsyncioTestCase
         self.assertTrue(binary.endswith("msedge.exe"))
 
 
+class TestLinuxPrefersInstalledChrome(unittest.IsolatedAsyncioTestCase):
+    # Ubuntu 24.04's AppArmor only grants the user-namespace sandbox to Google
+    # Chrome's own profile; Playwright's Chromium dies with "No usable sandbox!".
+    async def test_installed_google_chrome_beats_bundled_chromium(self):
+        def which(name):
+            return "/usr/bin/google-chrome" if name == "google-chrome" else None
+
+        with (
+            patch.object(browser_login, "_IS_WINDOWS", False),
+            patch.object(browser_login.shutil, "which", side_effect=which),
+        ):
+            binary = await browser_login._plain_chrome_binary()
+        self.assertEqual(binary, "/usr/bin/google-chrome")
+
+
 class TestDockerImage(unittest.TestCase):
     def test_x11vnc_is_no_longer_installed(self):
         dockerfile = (ROOT / "Dockerfile").read_text(encoding="utf-8")

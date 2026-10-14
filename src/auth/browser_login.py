@@ -19,6 +19,7 @@ import json
 import logging
 import os
 import re
+import shutil
 import signal
 import time
 from dataclasses import dataclass, field
@@ -246,15 +247,22 @@ def _needs_no_sandbox() -> bool:
 
 
 async def _plain_chrome_binary() -> str:
-    """The installed Google Chrome (or Edge, which every Windows has) on
-    Windows, else Playwright's own Chromium binary -- either way launched as
-    a plain process, not through Playwright."""
+    """The installed Google Chrome (or Edge, which every Windows has; or a
+    system Chromium on Linux), else Playwright's own Chromium binary --
+    either way launched as a plain process, not through Playwright. On Linux
+    the installed Chrome matters: Ubuntu's AppArmor grants the sandbox's user
+    namespaces only to Google Chrome's own profile."""
     if _IS_WINDOWS:
         for vendor, app, exe in (("Google", "Chrome", "chrome.exe"), ("Microsoft", "Edge", "msedge.exe")):
             for base in (os.environ.get("PROGRAMFILES"), os.environ.get("PROGRAMFILES(X86)"), os.environ.get("LOCALAPPDATA")):
                 path = os.path.join(base or "", vendor, app, "Application", exe)
                 if base and os.path.exists(path):
                     return path
+    else:
+        for name in ("google-chrome", "google-chrome-stable", "chromium", "chromium-browser"):
+            path = shutil.which(name)
+            if path:
+                return path
     async with async_playwright() as playwright:
         return playwright.chromium.executable_path
 
@@ -463,10 +471,19 @@ async def _terminate_process_group_gracefully(
     _terminate_process_group(proc)
 
 
+def _parent_pid(pid: int) -> int | None:
+    try:
+        with open(f"/proc/{pid}/stat", encoding="utf-8") as stat:
+            # "<pid> (<comm>) <state> <ppid> ..." -- comm may contain spaces.
+            return int(stat.read().rpartition(")")[2].split()[1])
+    except (OSError, ValueError, IndexError):
+        return None
+
+
 async def sweep_orphaned_processes() -> int:
     """Kill any Xvfb/x11vnc processes left over from a previous run (crash
     or deploy mid-login), recognized by the reserved display/port ranges
-    this module always uses. Safe to call on every app startup, including
+    this module always uses and by having been re-parented to init. Safe to call on every app startup, including
     a clean one (finds nothing, returns 0).
 
     Returns the number of processes killed.
@@ -497,6 +514,10 @@ async def sweep_orphaned_processes() -> int:
             if not pid_text.isdigit():
                 continue
             pid = int(pid_text)
+            # Only a real orphan: its TDM process died and init adopted it.
+            # Another TDM instance on the same host still parents its own.
+            if _parent_pid(pid) != 1:
+                continue
             try:
                 # SIGTERM first, same reasoning as
                 # _terminate_process_group_gracefully: x11vnc needs the
