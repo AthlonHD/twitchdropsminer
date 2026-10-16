@@ -7,7 +7,9 @@ All application code is in the src/ directory.
 """
 
 if __name__ == "__main__":
-    import runpy
+    import faulthandler, runpy, signal
+
+    faulthandler.register(signal.SIGUSR1, all_threads=True)
 
     # Run the src package as a module
     runpy.run_module("src", run_name="__main__")

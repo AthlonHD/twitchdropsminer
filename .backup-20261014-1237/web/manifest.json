@@ -1,0 +1,17 @@
+{
+  "name": "Twitch Drops Miner",
+  "short_name": "DropsMiner",
+  "description": "Automated Twitch Drops mining",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#0B0D12",
+  "theme_color": "#9146FF",
+  "icons": [
+    {
+      "src": "/logo.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}

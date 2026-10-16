@@ -8,7 +8,9 @@
     "goes_offline": "{channel} goes OFFLINE, switching...",
     "claimed_drop": "Claimed drop: {drop}",
     "no_channel": "No available channels to watch. Waiting for an ONLINE channel...",
-    "no_campaign": "No active campaigns to mine drops for. Waiting for an active campaign..."
+    "no_campaign": "No active campaigns to mine drops for. Waiting for an active campaign...",
+    "idle": "Idle: {channels}",
+    "idle_watching": "Idle watching: {channel}"
   },
   "login": {
     "unexpected_content": "Unexpected content type returned, usually due to being redirected. Do you need to login for internet access?",
@@ -23,13 +25,15 @@
       "unavailable": "Login browser could not start - check that Chromium, Xvfb, x11vnc and websockify are installed. Retrying..."
     },
     "browser_login": {
-      "instructions": "Log in to Twitch below. This is a real browser session running on the server -- your credentials never leave it.",
-      "vps_warning": "Hosting on a VPS? Twitch's own bot detection often blocks this -- run scripts/tdm_login_helper.py from your own device instead (see the README).",
-      "cancel": "Cancel login",
-      "on_real_display": "A browser window has opened on this machine's own desktop -- complete the Twitch login there.",
-      "device_code_use_instead": "Browser login not working? Log in with a code instead",
-      "device_code_prompt": "Open this page on any device and enter the code:",
-      "device_code_back": "Back to browser login"
+      "on_real_display": "A browser window has opened on this computer -- log in to Twitch there.",
+      "helper_intro": "TDM runs on a server, so log in from your own PC: run this command there (needs Python 3 and Google Chrome or Edge). A normal browser window opens -- log in to Twitch and you're done.",
+      "helper_copy": "Copy",
+      "helper_copied": "Copied",
+      "helper_download": "Or download the script",
+      "helper_py_hint": "If \"python\" is not found: use py on Windows, python3 on macOS/Linux.",
+      "helper_intro_local": "Not at this computer? Run this command on the PC you're using instead (needs Python 3 and Google Chrome or Edge):",
+      "helper_copy_manual": "Selected -- press Ctrl+C",
+      "helper_http_warning": "This dashboard is not encrypted (http) -- only run the command on your home network, or use https."
     }
   },
   "error": {
@@ -93,7 +97,18 @@
       "campaign_progress": "Progress:",
       "no_drop": "No active drop",
       "return_to_auto": "Return to Auto Mode",
-      "manual_mode_info": "Manual Mode: Mining"
+      "manual_mode_info": "Manual Mode: Mining",
+      "blacklist_drop_title": "Blacklist this drop — exclude it permanently while still mining other drops for this game",
+      "blacklist_drop_aria": "Blacklist this drop",
+      "blacklist_confirm": "Permanently blacklist \"{drop}\"? It will be excluded from mining from now on, but other drops for this game will keep being mined.",
+      "already_blacklisted": "Already blacklisted",
+      "view_campaign_drops": "View campaign drops",
+      "minutes_progress": "{current} / {required} minutes",
+      "time_remaining": "Time remaining: {time}",
+      "view_remaining_drops": "View remaining drops",
+      "ignore_campaign": "Ignore campaign",
+      "ignore_campaign_title": "Ignore this whole campaign — none of its drops will be mined or claimed",
+      "ignore_campaign_confirm": "Ignore the campaign \"{campaign}\"? None of its drops will be mined or claimed anymore."
     },
     "channels": {
       "name": "Channels",
@@ -104,12 +119,18 @@
       "no_channels_for_games": "No channels found for selected games...",
       "channel_count": "channel",
       "channel_count_plural": "channels",
-      "viewers": "viewers"
+      "viewers": "viewers",
+      "channel_count_few": "channels",
+      "viewer_singular": "viewer",
+      "viewers_few": "viewers",
+      "offline_short": "Offline"
     },
     "settings": {
       "general": {
         "name": "General",
-        "dark_mode": "Dark Mode"
+        "dark_mode": "Dark Mode",
+        "show_usernames": "Show Twitch Usernames in Header",
+        "tab_counter": "Show Remaining Drops (linked) in Tab Title"
       },
       "mining_benefits": "Mining Benefits",
       "mining_benefits_help": "Select which types of drops you want to mine.",
@@ -192,7 +213,10 @@
         "disconnect": "Disconnect",
         "disconnect_confirm": "Disconnect the Discord bot?",
         "invite_bot": "Invite bot",
-        "expires": "Expires in 10 min"
+        "expires": "Expires in 10 min",
+        "drops_label": "🎁 Drops: ",
+        "points_label": "💰 Points: ",
+        "clear_confirm": "Clear the {type} notification channel?"
       },
       "notifications_header": "Notifications",
       "push_enabled": "Browser Push Notifications",
@@ -202,14 +226,68 @@
       "blacklist_ids_header": "Blacklisted Drop IDs",
       "blacklist_ids_help": "Specific drops excluded by exact ID — added via the 🚫 button next to an active drop, or manually below. Unlike the keyword blacklist above, this matches one exact drop; other drops for the same game keep mining.",
       "blacklisted_games_header": "Blacklisted Games",
-      "blacklisted_games_help": "Games listed here are never auto-added to Games to Watch by \"Auto-add linked games\", even if Twitch links a drop campaign for them. Removing a game from Games to Watch already does this automatically — use this list to blacklist a game directly, without adding it first."
+      "blacklisted_games_help": "Games listed here are never auto-added to Games to Watch by \"Auto-add linked games\", even if Twitch links a drop campaign for them. Removing a game from Games to Watch already does this automatically — use this list to blacklist a game directly, without adding it first.",
+      "categories": {
+        "system": "System",
+        "notifications": "Notifications",
+        "mining": "Mining",
+        "idle_points": "Idle & Points",
+        "predictions": "Predictions"
+      },
+      "set_proxy_title": "Set and verify proxy",
+      "verify_proxy_title": "Test proxy connection",
+      "proxy_verifying": "Verifying connection...",
+      "proxy_empty": "Please enter a proxy URL first.",
+      "password_repeat_placeholder": "Repeat new password",
+      "blacklist_placeholder": "JP, Korea, (KR), exclusive...",
+      "blacklist_ids_placeholder": "Drop ID...",
+      "blacklisted_games_placeholder": "Game name...",
+      "select_badge_emote": "Select Badge/Emote",
+      "auto_prioritize": "Auto-prioritize by campaign end date",
+      "auto_add_linked": "Auto-add linked games to watch list",
+      "idle_parallel": "Parallel idle (watch all channels simultaneously)",
+      "idle_parallel_help": "Earn channel points from multiple channels at the same time when idle.",
+      "preferred_games": "⭐ Preferred Games",
+      "preferred_games_help": "Games that are always watched — even without active drop campaigns. Auto-connects when a campaign appears. Never auto-removed.",
+      "webhook_missing": "No webhook URL set.",
+      "push_blocked": "Browser notifications are blocked. Please allow them in your browser settings (click the lock icon in the address bar) and reload the page.",
+      "predictions": {
+        "header": "🎯 Auto-Bet",
+        "help": "Automatically bet channel points on predictions.",
+        "enable": "Enable Auto-Bet",
+        "strategy": "Strategy",
+        "strategy_smart": "SMART (by odds gap)",
+        "strategy_percentage": "PERCENTAGE (always bet)",
+        "strategy_high_odds": "HIGH_ODDS (underdog)",
+        "strategy_most_voted": "MOST_VOTED (crowd)",
+        "bet_gap_title": "Minimum gap between the top two outcomes' vote share required to place a SMART bet — if the gap is smaller, the prediction is skipped as too uncertain. Only affects the SMART strategy.",
+        "bet_pct": "Bet % of balance",
+        "bet_max": "Max points per bet",
+        "bet_min": "Min balance to bet",
+        "bet_delay": "Delay before lock (s)",
+        "whitelist_header": "📋 Channel Whitelist",
+        "whitelist_help": "Only bet on predictions in these channels. Leave empty to bet on all channels.",
+        "channel_placeholder": "Channel name...",
+        "overrides_header": "⚙️ Per-Channel Overrides",
+        "overrides_help": "Override global prediction settings per channel. Leave a field empty to use the global value.",
+        "add_channel": "Add Channel",
+        "no_overrides": "No per-channel overrides configured.",
+        "global_placeholder": "(global)",
+        "col_channel": "Channel",
+        "col_strategy": "Strategy",
+        "col_bet_pct": "Bet%",
+        "col_max_pts": "Max pts",
+        "col_min_balance": "Min bal",
+        "col_delay": "Delay(s)"
+      },
+      "campaign_end_notification": "⏰ Campaign ending in ~{hours}h"
     },
     "help": {
       "about": "About Twitch Drops Miner",
       "about_text": "This application automatically mines timed Twitch drops without downloading stream data.",
       "how_to_use": "How to Use",
       "how_to_use_items": [
-        "Login using your Twitch account (OAuth device code flow)",
+        "Log in with your Twitch account in a normal browser window (opened by TDM, or by the login command on a server)",
         "Link your accounts at <a href=\"https://www.twitch.tv/drops/campaigns\" target=\"_blank\">twitch.tv/drops/campaigns</a>",
         "The miner will automatically discover campaigns and start mining",
         "Configure priority games in Settings to focus on what you want",
@@ -244,7 +322,9 @@
     "footer": {
       "version": "Version:",
       "loading": "Loading...",
-      "update_available": "Update Available:"
+      "update_available": "Update Available:",
+      "update_title": "Click to download update",
+      "support": "Support"
     },
     "badges": {
       "manual": {
@@ -259,7 +339,9 @@
     },
     "wanted": {
       "name": "Wanted Drops Queue",
-      "none": "No wanted drops queued..."
+      "none": "No wanted drops queued...",
+      "waiting_for_campaign": "⭐ Waiting for Campaign",
+      "no_campaign": "No campaign"
     },
     "main_stats": {
       "drops_today": "Drops Today",
@@ -274,6 +356,9 @@
       "check_drops_title": "Stop idle watching and immediately search for active drop campaigns to mine. Also un-skips any game skipped via Skip Current Game.",
       "check_drops_label": "Start Drop Mining",
       "check_drops_desc": "Stop idle, search for drops now",
+      "check_drops_desc_default": "Search for active drops",
+      "mining_active_label": "Drop Mining Active",
+      "mining_active_desc": "Currently farming drops",
       "idle_title": "Start watching an idle channel to farm channel points",
       "idle_label": "Start Idle Watch",
       "idle_desc": "Farm points while no drops",
@@ -308,7 +393,14 @@
         "emote": "Emote",
         "other": "Other",
         "clear": "Clear Filters",
-        "search_placeholder": "Type to search games..."
+        "search_placeholder": "Type to search games...",
+        "sub_drops": "Sub Drops",
+        "sub_drops_title": "Show drops that require a Twitch subscription",
+        "item_title": "Direct Entitlement (Game Item)",
+        "unverified_links": "Mine unverified links",
+        "unverified_links_title": "Also mine campaigns whose account-link state Twitch no longer reports. Only enable this for games you have actually linked.",
+        "list_view": "List View",
+        "list_view_title": "Show campaigns as compact horizontal rows instead of cards"
       },
       "filter_linked": "Linked",
       "no_campaigns_filtered": "No campaigns match the current filters.",
@@ -331,7 +423,9 @@
       "farm_title_farm": "Click to farm this game",
       "drop_singular": "drop",
       "drop_plural": "drops",
-      "drops_left_suffix": "left"
+      "drops_left_suffix": "left",
+      "drop_few": "drops",
+      "drops_left_format": "{count} {drops} left"
     },
     "system": {
       "header": "System",
@@ -349,10 +443,42 @@
       "restart_confirm": "Restart the miner? PM2 will restart it automatically.",
       "restart_ok": "Miner stopping — will restart via PM2 in a few seconds.",
       "twitch_logout_header": "Twitch Account",
-      "twitch_logout_desc": "Forget the saved Twitch session and start a fresh login (noVNC browser or paste-your-session). Your dashboard password and other settings are kept.",
+      "twitch_logout_desc": "Forget the saved Twitch session and log in again. Your dashboard password and other settings are kept.",
       "twitch_logout_btn": "Log out of Twitch",
       "twitch_logout_confirm": "Log out of Twitch? The miner will restart and ask you to log in again.",
-      "twitch_logout_ok": "Twitch session cleared — restarting for a fresh login..."
+      "twitch_logout_ok": "Twitch session cleared — restarting for a fresh login...",
+      "instances_header": "Instances",
+      "instances_desc": "Each instance runs a separate TDM process with its own Twitch session.",
+      "proxy_recommended": "Proxy recommended:",
+      "proxy_recommended_text": "Running 3+ accounts from one IP increases Twitch ban risk. Add one proxy per account in Settings → Proxy.",
+      "add_instance": "+ Add Instance",
+      "register_desc": "Already running an instance yourself (custom port, another host/container)? Register it here — nothing is started, stopped, or reconfigured.",
+      "register_label_placeholder": "label (optional)",
+      "register_btn": "Register",
+      "diagnostics_header": "Diagnostics",
+      "diagnostics_desc": "Reporting a bug? Download the log file and attach it — makes it far easier to pin down what happened.",
+      "download_logs": "⬇ Download Logs",
+      "accounts_desc": "Switch between saved Twitch logins within this instance.",
+      "instance_remove_title": "Remove instance",
+      "instance_remove_confirm": "Remove Account {n}? The process will be stopped. Data is preserved.",
+      "instance_removing": "Removing instance {n}...",
+      "instance_removed": "Instance {n} removed. Reloading...",
+      "instances_load_failed": "Failed to load instances.",
+      "instance_creating": "Creating new instance... (this may take ~10s)",
+      "instance_created": "Instance created! Reloading...",
+      "instance_create_failed": "Failed to create instance",
+      "invalid_port": "Enter a valid port.",
+      "instance_registered": "Instance registered! Reloading...",
+      "instance_register_failed": "Failed to register instance",
+      "no_accounts": "No accounts saved yet.",
+      "account_active": "Active",
+      "not_logged_in": "Not logged in",
+      "switch_confirm": "Switch to account \"{label}\"? The miner will restart.",
+      "switched": "Switched to {label}, restarting...",
+      "delete_confirm": "Delete account \"{label}\"?",
+      "accounts_load_failed": "Error loading accounts.",
+      "enter_label": "Enter a label first.",
+      "account_added": "Account \"{label}\" added, miner restarting for login..."
     },
     "analytics": {
       "stats_header": "Drop Statistics",
@@ -372,7 +498,25 @@
       "no_subscribed_channels": "No subscribed channels among the {count} tracked. Switch to \"All\" to see everything.",
       "drop_history": "Drop History",
       "no_history": "No drops claimed yet.",
-      "unknown_result_tooltip": "Result unknown — the app didn't see this prediction resolve (bot restart, disconnect, or channel went offline before it concluded)."
+      "unknown_result_tooltip": "Result unknown — the app didn't see this prediction resolve (bot restart, disconnect, or channel went offline before it concluded).",
+      "export_csv": "⤓ Export CSV",
+      "export_csv_title": "Download the full drop history as a CSV file",
+      "points_over_time": "📈 Points Over Time",
+      "predictions_history": "Predictions History",
+      "pred_col_time": "Time",
+      "pred_col_channel": "Channel",
+      "pred_col_prediction": "Prediction",
+      "pred_col_selection": "Selection",
+      "pred_col_bet": "Bet",
+      "pred_col_result": "Result",
+      "pred_col_won": "Won",
+      "pred_total": "Total",
+      "pred_win_rate": "Win Rate",
+      "pred_net": "Net",
+      "history_summary": "{total} total · {today} today",
+      "cp_summary": "{channels} channels · {points} pts total",
+      "cp_summary_session": " · +{points} session",
+      "cp_disabled": "No Points"
     },
     "drops_today": {
       "title": "Drops Claimed Today",
@@ -453,6 +597,28 @@
       "applied": "✅ Update Applied",
       "restarting_suffix": "⏳ Restarting... page will reconnect shortly.",
       "error_contacting": "Error contacting server."
+    },
+    "sidebar": {
+      "accounts": "Accounts"
+    },
+    "common": {
+      "add": "Add",
+      "clear": "Clear",
+      "remove": "Remove",
+      "rename": "Rename",
+      "switch": "Switch",
+      "error": "Error: {error}",
+      "failed": "Failed",
+      "unknown": "Unknown",
+      "prev": "‹ Prev",
+      "next": "Next ›",
+      "page_of": "Page {page} of {total}",
+      "points_short": "{points} pts",
+      "loading_btn": "↻ Loading...",
+      "request_failed": "❌ Request failed: {error}"
+    },
+    "console": {
+      "toggle_title": "Toggle log output"
     }
   }
 }

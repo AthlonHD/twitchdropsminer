@@ -1,0 +1,383 @@
+"""
+Inventory service for managing campaigns, drops, and inventory fetching.
+
+This service handles fetching campaign data from Twitch's GraphQL API,
+managing the inventory state, and determining active campaigns.
+"""
+
+from __future__ import annotations
+
+import asyncio
+import logging
+from datetime import datetime, timedelta, timezone
+from typing import TYPE_CHECKING, Any
+
+from dateutil.parser import isoparse
+
+from src.api import GQLClient
+from src.config import GQL_OPERATIONS, ClientType
+from src.exceptions import ExitRequest, GQLException
+from src.i18n import _
+from src.models import DropsCampaign
+from src.services.campaign_discovery import discover_campaigns_via_browser
+from src.services.public_catalog import campaign_from_feed, fetch_public_campaigns, link_states
+from src.utils import chunk
+
+
+if TYPE_CHECKING:
+    from src.config import JsonType
+    from src.core.client import Twitch
+    from src.models.channel import Channel
+
+
+logger = logging.getLogger("TwitchDrops")
+
+
+class InventoryService:
+    """
+    Service responsible for inventory and campaign management.
+
+    Handles:
+    - Fetching campaign details from GraphQL
+    - Fetching inventory (in-progress campaigns)
+    - Determining active campaign for a channel
+    - Managing campaign data and claimed benefits
+    """
+
+    def __init__(self, twitch: Twitch) -> None:
+        """
+        Initialize the inventory service.
+
+        Args:
+            twitch: The Twitch client instance
+        """
+        self._twitch = twitch
+
+    async def fetch_campaigns(
+        self, campaigns_chunk: list[tuple[str, JsonType]]
+    ) -> dict[str, JsonType]:
+        """
+        Fetch detailed campaign data for a chunk of campaign IDs.
+
+        Args:
+            campaigns_chunk: List of (campaign_id, campaign_data) tuples
+
+        Returns:
+            Dictionary mapping campaign IDs to their detailed data
+        """
+        campaign_ids: dict[str, JsonType] = dict(campaigns_chunk)
+        auth_state = await self._twitch.get_auth()
+
+        response_list_raw = await self._twitch.gql_request(
+            [
+                GQL_OPERATIONS["CampaignDetails"].with_variables(
+                    {"channelLogin": str(auth_state.user_id), "dropID": cid}
+                )
+                for cid in campaign_ids
+            ]
+        )
+
+        # Ensure we have a list
+        response_list: list[JsonType] = (
+            response_list_raw if isinstance(response_list_raw, list) else [response_list_raw]
+        )
+
+        # Twitch answers "dropCampaign": null for a campaign this account may not
+        # see (the public feed lists everyone's campaigns) -- skip those instead
+        # of crashing the whole inventory fetch.
+        fetched_data: dict[str, JsonType] = {}
+        for response_json in response_list:
+            user = (response_json.get("data") or {}).get("user")
+            campaign_data = user.get("dropCampaign") if user else None
+            if campaign_data is not None:
+                fetched_data[campaign_data["id"]] = campaign_data
+        campaign_ids = {cid: v for cid, v in campaign_ids.items() if cid in fetched_data}
+        if len(fetched_data) < len(response_list):
+            logger.info(
+                f"CampaignDetails: {len(fetched_data)} of {len(response_list)} campaigns "
+                f"available to this account (rest returned null)"
+            )
+            if not fetched_data:
+                logger.debug(f"CampaignDetails sample response: {str(response_list[0])[:400]}")
+
+        return GQLClient.merge_data(campaign_ids, fetched_data)
+
+    async def fetch_inventory(self) -> None:
+        """
+        Fetch the complete inventory including campaigns and drops.
+
+        This method:
+        1. Fetches in-progress campaigns (inventory)
+        2. Fetches available campaigns
+        3. Fetches detailed data for each campaign
+        4. Creates DropsCampaign objects
+        5. Updates GUI with campaign information
+        6. Sets up maintenance triggers for campaign timing changes
+        """
+        try:
+            await self._fetch_inventory()
+        except GQLException as exc:
+            # "failed integrity check" / IntegrityCheckFailed on dropCampaigns:
+            # ClientType.WEB's GQL requests need a real Client-Integrity token
+            # (see _AuthState._ensure_integrity_token) that a browser JS
+            # challenge mints; acquisition can fail or not have completed yet
+            # (slow, or environment-specific -- headful Chromium opening its
+            # CDP debug port is known-unreliable on some virtualized hosts,
+            # see src/services/campaign_discovery.py's own docstring).
+            # Letting this escape used to crash the entire miner outright on
+            # every single occurrence (reported live: right after a fresh,
+            # successful login, before anything else got a chance to run) --
+            # treat it the same as the already-handled "currentUser is None"
+            # transient case instead: log and let the periodic reload (the
+            # finally: below reschedules it regardless) retry later, once a
+            # token is acquired or the next attempt simply succeeds.
+            if "IntegrityCheckFailed" in str(exc):
+                logger.warning(
+                    "Inventory fetch failed Twitch's integrity check -- will retry on the "
+                    "next scheduled reload instead of crashing. This is expected until a "
+                    "Client-Integrity token has been acquired (see the startup/login logs)."
+                )
+            else:
+                raise
+        finally:
+            # Always reschedule the maintenance heartbeat, even if the fetch above
+            # raised partway through. It used to only be re-armed on a clean finish,
+            # so a single transient GQL/network error would silently kill the periodic
+            # reload for the rest of the session, with nothing left to ever retry it.
+            if self._twitch._mnt_task is not None and not self._twitch._mnt_task.done():
+                self._twitch._mnt_task.cancel()
+            self._twitch._mnt_task = asyncio.create_task(
+                self._twitch._maintenance_service.run_maintenance_task()
+            )
+
+    async def _fetch_inventory(self) -> None:
+        status_update = self._twitch.gui.status.update
+        status_update(_.t["gui"]["status"]["fetching_inventory"])
+
+        # fetch in-progress campaigns (inventory)
+        response = await self._twitch.gql_request(GQL_OPERATIONS["Inventory"])
+        current_user: JsonType | None = response["data"]["currentUser"]
+        if current_user is None:
+            # Twitch can answer with a "server error" GQL error scoped to the whole
+            # "currentUser" field while still returning HTTP 200 (no exception raised)
+            # - see watch_service.watch_loop for the full explanation. The maintenance
+            # heartbeat gets rescheduled regardless (see the finally: above), so this
+            # just delays the fetch to the next periodic retry instead of crashing.
+            raise GQLException("Inventory query returned currentUser=None (transient Twitch-side error)")
+        inventory: JsonType = current_user["inventory"]
+        ongoing_campaigns: list[JsonType] = inventory["dropCampaignsInProgress"] or []
+
+        # this contains claimed benefit edge IDs, not drop IDs
+        claimed_benefits: dict[str, datetime] = {
+            b["id"]: isoparse(b["lastAwardedAt"]) for b in inventory["gameEventDrops"]
+        }
+
+        inventory_data: dict[str, JsonType] = {c["id"]: c for c in ongoing_campaigns}
+
+        # fetch general available campaigns data (campaigns)
+        applicable_statuses = ("ACTIVE", "UPCOMING")
+        available_campaigns: dict[str, JsonType] = {}
+        public_records: dict[str, JsonType] = {}
+        try:
+            response = await self._twitch.gql_request(GQL_OPERATIONS["Campaigns"])
+            current_user = response["data"]["currentUser"]
+            if current_user is None:
+                raise GQLException(
+                    "Campaigns query returned currentUser=None (transient Twitch-side error)"
+                )
+            available_list: list[JsonType] = current_user["dropCampaigns"] or []
+            available_campaigns = {
+                c["id"]: c
+                for c in available_list
+                if c["status"] in applicable_statuses  # that are currently not expired
+            }
+            if self._twitch._client_type is ClientType.SMARTBOX:
+                # device-code logins only get a reduced dropCampaigns list;
+                # the public feed fills in the rest (additive, existing ids win)
+                public = await fetch_public_campaigns(
+                    await self._twitch.get_session(), self._twitch.settings.proxy
+                )
+                for c in public:
+                    public_records[c["id"]] = c
+                    available_campaigns.setdefault(c["id"], c)
+        except GQLException as exc:
+            if "IntegrityCheckFailed" not in str(exc):
+                raise
+            self._twitch._auth_state.reject_integrity_token()
+            # The account-bound campaign list is integrity-gated, but the list
+            # itself needs no account: take ids from the public feed and let
+            # the CampaignDetails queries below fill in the rest.
+            logger.warning("Campaigns query failed the integrity check, using the public drops feed")
+            public = await fetch_public_campaigns(
+                await self._twitch.get_session(), self._twitch.settings.proxy
+            )
+            public_records = {c["id"]: c for c in public}
+            available_campaigns = dict(public_records)
+            if not available_campaigns and not inventory_data:
+                raise
+
+        # Supplemental: SMARTBOX's own client-id (used above) sees a reduced
+        # campaign catalog compared to Twitch's real web client (see
+        # campaign_discovery.py's own docstring for the confirmed root
+        # cause). ADDITIVE only -- an id already found above always wins,
+        # this just fills in campaigns SMARTBOX's query never returned at
+        # all. Never raises and returns [] if Playwright isn't installed, so
+        # this is a pure widening, never a regression on a box without it.
+        try:
+            browser_campaigns = await discover_campaigns_via_browser(self._twitch)
+        except Exception as exc:
+            logger.warning(f"Browser-based campaign discovery raised unexpectedly: {exc}")
+            browser_campaigns = []
+        for c in browser_campaigns:
+            if c.get("status") in applicable_statuses and c.get("id") not in available_campaigns:
+                available_campaigns[c["id"]] = c
+
+        # fetch detailed data for each campaign, in chunks
+        status_update(_.t["gui"]["status"]["fetching_campaigns"])
+        fetch_campaigns_tasks: list[asyncio.Task[Any]] = [
+            asyncio.create_task(self.fetch_campaigns(campaigns_chunk))
+            for campaigns_chunk in chunk(available_campaigns.items(), 20)
+        ]
+
+        try:
+            for coro in asyncio.as_completed(fetch_campaigns_tasks):
+                try:
+                    chunk_campaigns_data = await coro
+                except GQLException as exc:
+                    # A chunk's CampaignDetails query can keep failing even after
+                    # gql_client's own retries are exhausted (e.g. Twitch-side
+                    # "service error" that's specific to one campaign). Losing
+                    # detail for that one chunk of ~20 campaigns shouldn't take
+                    # down the entire inventory fetch (and thus the whole miner) -
+                    # log it and keep going with everything else that succeeded.
+                    logger.error(f"Failed to fetch campaign details for a chunk, skipping it: {exc}")
+                    if "IntegrityCheckFailed" in str(exc):
+                        self._twitch._auth_state.reject_integrity_token()
+                    continue
+                # merge the inventory and campaigns datas together
+                inventory_data = GQLClient.merge_data(inventory_data, chunk_campaigns_data)
+        except Exception:
+            # asyncio.as_completed doesn't cancel tasks on errors
+            for task in fetch_campaigns_tasks:
+                task.cancel()
+            raise
+
+        # Twitch no longer answers the account-bound campaign queries for some
+        # identities (dropCampaigns/CampaignDetails come back null), but the public
+        # feed carries the full campaign data: use it for every campaign that has
+        # no details yet, letting real inventory (progress) data win when merged.
+        states = link_states(inventory["gameEventDrops"])
+        for campaign_id, record in public_records.items():
+            existing = inventory_data.get(campaign_id)
+            if existing is not None and "allow" in existing:
+                continue
+            forged = campaign_from_feed(record, states)
+            try:
+                inventory_data[campaign_id] = (
+                    GQLClient.merge_data(existing, forged) if existing else forged
+                )
+            except Exception as exc:
+                logger.warning(f"Could not merge feed data for campaign {campaign_id}: {exc}")
+                inventory_data[campaign_id] = existing or forged
+
+        # filter out invalid campaigns
+        for campaign_id in list(inventory_data.keys()):
+            if inventory_data[campaign_id]["game"] is None:
+                del inventory_data[campaign_id]
+
+        # use the merged data to create campaign objects
+        campaigns: list[DropsCampaign] = [
+            DropsCampaign(self._twitch, campaign_data, claimed_benefits)
+            for campaign_data in inventory_data.values()
+        ]
+        campaigns.sort(key=lambda c: c.active, reverse=True)
+        campaigns.sort(key=lambda c: c.upcoming and c.starts_at or c.ends_at)
+        campaigns.sort(key=lambda c: c.eligible, reverse=True)
+
+        self._twitch._drops.clear()
+        self._twitch._campaigns.clear()
+        self._twitch.gui.inv.clear()
+        self._twitch.inventory.clear()
+        self._twitch._mnt_triggers.clear()
+        switch_triggers: set[datetime] = set()
+        next_hour = datetime.now(timezone.utc) + timedelta(hours=1)
+
+        # add the campaigns to the internal inventory
+        for campaign in campaigns:
+            self._twitch._drops.update({drop.id: drop for drop in campaign.drops})
+            if campaign.can_earn_within(next_hour):
+                switch_triggers.update(campaign.time_triggers)
+            self._twitch.inventory.append(campaign)
+            self._twitch._campaigns[campaign.id] = campaign
+
+        # concurrently add the campaigns into the GUI
+        # NOTE: this fetches pictures from the CDN, so might be slow without a cache
+        status_update(
+            _.t["gui"]["status"]["adding_campaigns"].format(counter=f"(0/{len(campaigns)})")
+        )
+        add_campaign_tasks: list[asyncio.Task[None]] = [
+            asyncio.create_task(self._twitch.gui.inv.add_campaign(campaign))
+            for campaign in campaigns
+        ]
+
+        try:
+            for i, coro in enumerate(asyncio.as_completed(add_campaign_tasks), start=1):
+                await coro
+                status_update(
+                    _.t["gui"]["status"]["adding_campaigns"].format(
+                        counter=f"({i}/{len(campaigns)})"
+                    )
+                )
+                # this is needed here explicitly, because cache reads from disk don't raise this
+                from src.config import State
+
+                if self._twitch._state == State.EXIT:
+                    raise ExitRequest()
+        except Exception:
+            # asyncio.as_completed doesn't cancel tasks on errors
+            for task in add_campaign_tasks:
+                task.cancel()
+            raise
+
+        self._twitch._mnt_triggers.extend(sorted(switch_triggers))
+
+        # trim out all triggers that we're already past
+        now = datetime.now(timezone.utc)
+        while self._twitch._mnt_triggers and self._twitch._mnt_triggers[0] <= now:
+            self._twitch._mnt_triggers.popleft()
+
+        # NOTE: maintenance task is restarted by fetch_inventory's finally block,
+        # regardless of whether this method finishes cleanly or raises.
+
+    def get_active_campaign(self, channel: Channel | None = None) -> DropsCampaign | None:
+        """
+        Determine the active campaign for a given channel (or watching channel).
+
+        Returns the campaign with the least remaining minutes that can be earned
+        on the specified channel. This is used to determine which drop is actively
+        being progressed.
+
+        Args:
+            channel: The channel to check (defaults to watching channel)
+
+        Returns:
+            The active DropsCampaign, or None if no campaign can be earned
+        """
+        if not self._twitch.wanted_games:
+            return None
+
+        watching_channel = self._twitch.watching_channel.get_with_default(channel)
+        if watching_channel is None:
+            # if we aren't watching anything, we can't earn any drops
+            return None
+
+        campaigns: list[DropsCampaign] = []
+        for campaign in self._twitch.inventory:
+            if campaign.can_earn(watching_channel):
+                campaigns.append(campaign)
+
+        if campaigns:
+            campaigns.sort(key=lambda c: c.remaining_minutes)
+            return campaigns[0]
+
+        return None

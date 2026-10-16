@@ -132,7 +132,7 @@ async function fetchAndDisplayVersion() {
         const versionElement = document.getElementById('current-version');
         const loadingText = state.translations.gui?.footer?.loading || 'Loading...';
         if (versionElement && versionElement.textContent === loadingText) {
-            versionElement.textContent = 'Unknown';
+            versionElement.textContent = tr('gui.common.unknown', 'Unknown');
         }
     }
 }
@@ -243,11 +243,7 @@ socket.on('initial_state', (data) => {
 
     if (data.watching_channel) {
         const login = data.watching_channel.login;
-        const gameEl = document.getElementById('status-game');
-        if (gameEl && data.watching_channel.game) {
-            gameEl.textContent = 'Game: ' + data.watching_channel.game;
-            gameEl.style.display = '';
-        }
+        if (data.watching_channel.game) setStatusGame(data.watching_channel.game);
         updateChannelPointsDisplay(login, null);
         // Proactively check cp_enabled for current channel
         fetch(API_BASE + `/api/channel-points/${login}`).then(r => r.json()).then(d => {
@@ -375,20 +371,11 @@ socket.on('drop_update', (data) => {
 });
 
 socket.on('login_required', () => {
-    // No-op on its own now -- browser_login_ready (below) is what actually
-    // shows the panel, once the server-side session is ready to view.
-});
-
-socket.on('browser_login_ready', (data) => {
-    showBrowserLoginPanel(data.websocket_path);
+    // No-op on its own: login_status (login_helper / status text) drives the panel.
 });
 
 socket.on('login_status', (data) => {
     updateLoginStatus(data);
-});
-
-socket.on('device_code_ready', (data) => {
-    showDeviceCodePanel(data.url, data.code);
 });
 
 socket.on('settings_updated', (data) => {
@@ -424,8 +411,8 @@ socket.on('campaign_end_alert', (campaigns) => {
     if (!('Notification' in window) || Notification.permission !== 'granted') return;
 
     for (const c of campaigns) {
-        new Notification(`⏰ Campaign ending in ~${c.hours_left}h`, {
-            body: `${c.name} — ${c.game} (${c.remaining_drops} drops left)`,
+        new Notification(tr('gui.settings.campaign_end_notification', '⏰ Campaign ending in ~{hours}h', { hours: c.hours_left }), {
+            body: `${c.name} — ${c.game} (${dropsLeftText(c.remaining_drops)})`,
         });
     }
 });
@@ -473,11 +460,13 @@ function updateChannelPointsDisplay(login, claimedAmount) {
     const pts = state.sessionPoints[login];
     channelEl.textContent = login;
     const cpDisabled = pts && pts.cpEnabled === false;
-    balanceEl.textContent = cpDisabled ? 'No Points' : (pts ? `${pts.balance.toLocaleString()} pts` : '0 pts');
+    balanceEl.textContent = cpDisabled
+        ? tr('gui.analytics.cp_disabled', 'No Points')
+        : tr('gui.common.points_short', '{points} pts', { points: pts ? pts.balance.toLocaleString() : 0 });
     balanceEl.style.color = cpDisabled ? '#8991A6' : '';
 
     if (claimedAmount && claimedEl) {
-        claimedEl.textContent = `+${claimedAmount.toLocaleString()} pts`;
+        claimedEl.textContent = '+' + tr('gui.common.points_short', '{points} pts', { points: claimedAmount.toLocaleString() });
         claimedEl.style.opacity = '1';
         setTimeout(() => { claimedEl.style.opacity = '0'; }, 3000);
     }
@@ -510,12 +499,12 @@ function renderPointsTracker() {
             nameEl.appendChild(nameTxt);
             if (data.cpEnabled === false) {
                 const badge = document.createElement('span');
-                badge.textContent = 'No Points';
+                badge.textContent = tr('gui.analytics.cp_disabled', 'No Points');
                 badge.style.cssText = 'font-size:0.7rem;background:#262B38A4A;color:#8991A6;padding:1px 5px;border-radius:4px;';
                 nameEl.appendChild(badge);
             }
             const ptsEl = document.createElement('span');
-            ptsEl.textContent = data.cpEnabled === false ? '—' : `${data.balance.toLocaleString()} pts`;
+            ptsEl.textContent = data.cpEnabled === false ? '—' : tr('gui.common.points_short', '{points} pts', { points: data.balance.toLocaleString() });
             row.appendChild(nameEl);
             row.appendChild(ptsEl);
             list.appendChild(row);
@@ -600,7 +589,7 @@ function renderDropHistory(drops) {
     const todayCount = drops.filter(d => new Date(d.timestamp).toDateString() === today).length;
     emptyEl.style.display = "none";
     listEl.style.display = "block";
-    if (summaryEl) summaryEl.textContent = `${drops.length} total · ${todayCount} today`;
+    if (summaryEl) summaryEl.textContent = tr('gui.analytics.history_summary', '{total} total · {today} today', { total: drops.length, today: todayCount });
     listEl.replaceChildren();
 
     listEl.style.cssText = 'scrollbar-width:thin;scrollbar-color:var(--border-color) transparent;';
@@ -694,16 +683,16 @@ function renderPager(containerEl, totalItems, pageSize, currentPage, onPageChang
     containerEl.style.cssText = 'display:flex;align-items:center;justify-content:center;gap:10px;padding:10px 0;font-size:0.8rem;color:var(--text-secondary,#8991A6);';
 
     const prevBtn = document.createElement('button');
-    prevBtn.textContent = '‹ Prev';
+    prevBtn.textContent = tr('gui.common.prev', '‹ Prev');
     prevBtn.className = 'secondary-btn';
     prevBtn.disabled = currentPage <= 1;
     prevBtn.addEventListener('click', () => onPageChange(currentPage - 1));
 
     const label = document.createElement('span');
-    label.textContent = `Page ${currentPage} of ${totalPages}`;
+    label.textContent = tr('gui.common.page_of', 'Page {page} of {total}', { page: currentPage, total: totalPages });
 
     const nextBtn = document.createElement('button');
-    nextBtn.textContent = 'Next ›';
+    nextBtn.textContent = tr('gui.common.next', 'Next ›');
     nextBtn.className = 'secondary-btn';
     nextBtn.disabled = currentPage >= totalPages;
     nextBtn.addEventListener('click', () => onPageChange(currentPage + 1));
@@ -777,7 +766,8 @@ function renderChannelPointsTab() {
     const totalBalance = entries.reduce((s, [, d]) => s + (d.balance || 0), 0);
     const totalClaimed = entries.reduce((s, [, d]) => s + (d.claimed || 0), 0);
     if (summaryEl) {
-        summaryEl.textContent = `${entries.length} channels · ${totalBalance.toLocaleString()} pts total${totalClaimed > 0 ? ` · +${totalClaimed.toLocaleString()} session` : ''}`;
+        summaryEl.textContent = tr('gui.analytics.cp_summary', '{channels} channels · {points} pts total', { channels: entries.length, points: totalBalance.toLocaleString() })
+            + (totalClaimed > 0 ? tr('gui.analytics.cp_summary_session', ' · +{points} session', { points: totalClaimed.toLocaleString() }) : '');
     }
 
     listEl.replaceChildren();
@@ -810,7 +800,7 @@ function renderChannelPointsTab() {
         }
 
         const ptsEl = document.createElement('span');
-        ptsEl.textContent = `${(data.balance || 0).toLocaleString()} pts`;
+        ptsEl.textContent = tr('gui.common.points_short', '{points} pts', { points: (data.balance || 0).toLocaleString() });
         ptsEl.style.cssText = `font-size:0.85rem;font-weight:600;color:${isTop ? 'var(--ore)' : 'var(--text-primary)'};white-space:nowrap;flex-shrink:0;`;
         row.appendChild(ptsEl);
 
@@ -829,10 +819,14 @@ function updateTitleBadge(count) {
 
 function updateStatus(status) {
     document.getElementById('status-text').textContent = status;
-    if (!/watching/i.test(status)) {
-        const gameEl = document.getElementById('status-game');
-        if (gameEl) { gameEl.textContent = ''; gameEl.style.display = 'none'; }
-    }
+    // Keep the "Game:" line only while watching. Besides the English text and
+    // the 💤 idle marker, also recognise the translated "watching" statuses.
+    const st = state.translations?.status || {};
+    const watchingPrefixes = [st.watching, st.idle_watching, st.idle]
+        .filter(Boolean).map(text => text.split('{')[0].trim()).filter(Boolean);
+    const isWatching = /watching/i.test(status) || status.includes('💤')
+        || watchingPrefixes.some(prefix => status.includes(prefix));
+    if (!isWatching) setStatusGame(null);
     updateQCButtons(status);
     // Count remaining unclaimed drops for linked campaigns only
     const remainingDrops = Object.values(state.campaigns).reduce((sum, c) => {
@@ -850,6 +844,9 @@ function updateQCButtons(status) {
     const checkBtn = document.getElementById('qc-check-drops-btn');
     const switchBtn = document.getElementById('qc-switch-btn');
     const skipBtn = document.getElementById('qc-skip-btn');
+    // Labels come from the language file; English literals are only a fallback
+    // for language files that predate these keys.
+    const qc = state.translations?.gui?.quick_controls || {};
 
     // "Start Drop Mining" button
     if (checkBtn) {
@@ -859,16 +856,16 @@ function updateQCButtons(status) {
         if (isMining) {
             // Actively mining a drop → green
             checkBtn.classList.add('qc-btn--active-green');
-            if (strong) strong.textContent = 'Drop Mining Active';
-            if (small) small.textContent = 'Currently farming drops';
+            if (strong) strong.textContent = qc.mining_active_label || 'Drop Mining Active';
+            if (small) small.textContent = qc.mining_active_desc || 'Currently farming drops';
         } else if (isIdleWatching) {
             // Idle-watching → purple, action is start mining
             checkBtn.classList.add('qc-btn--active');
-            if (strong) strong.textContent = 'Start Drop Mining';
-            if (small) small.textContent = 'Stop idle, search for drops now';
+            if (strong) strong.textContent = qc.check_drops_label || 'Start Drop Mining';
+            if (small) small.textContent = qc.check_drops_desc || 'Stop idle, search for drops now';
         } else {
-            if (strong) strong.textContent = 'Start Drop Mining';
-            if (small) small.textContent = 'Search for active drops';
+            if (strong) strong.textContent = qc.check_drops_label || 'Start Drop Mining';
+            if (small) small.textContent = qc.check_drops_desc_default || 'Search for active drops';
         }
     }
 
@@ -891,8 +888,8 @@ function updateQCButtons(status) {
         skipBtn.classList.remove('qc-btn--active');
         const strong = skipBtn.querySelector('strong');
         const small = skipBtn.querySelector('small');
-        if (strong) strong.textContent = 'Skip Game';
-        if (small) small.textContent = 'End this drop, find next game';
+        if (strong) strong.textContent = qc.skip_label || 'Skip Game';
+        if (small) small.textContent = qc.skip_desc || 'End this drop, find next game';
     } else if (skipBtn) {
         skipBtn.classList.remove('qc-btn--active-warn', 'qc-btn--active');
     }
@@ -947,11 +944,7 @@ function setWatchingChannel(channelId, gameOverride) {
         state.channels[channelId].watching = true;
     }
     const game = (state.channels[channelId] && state.channels[channelId].game) || gameOverride;
-    const gameEl = document.getElementById('status-game');
-    if (gameEl) {
-        if (game) { gameEl.textContent = 'Game: ' + game; gameEl.style.display = ''; }
-        else { gameEl.textContent = ''; gameEl.style.display = 'none'; }
-    }
+    setStatusGame(game);
     renderChannels();
 }
 
@@ -1047,10 +1040,14 @@ function renderChannels() {
         const channelCount = group.channels.length;
         const totalViewers = group.channels.reduce((sum, ch) => sum + (ch.viewers || 0), 0);
 
-        const channelText = channelCount === 1
-            ? (t.gui?.channels?.channel_count || 'channel')
-            : (t.gui?.channels?.channel_count_plural || 'channels');
-        const viewersText = t.gui?.channels?.viewers || 'viewers';
+        const channelText = pluralForm(channelCount,
+            t.gui?.channels?.channel_count || 'channel',
+            t.gui?.channels?.channel_count_few,
+            t.gui?.channels?.channel_count_plural || 'channels');
+        const viewersText = pluralForm(totalViewers,
+            t.gui?.channels?.viewer_singular || 'viewer',
+            t.gui?.channels?.viewers_few,
+            t.gui?.channels?.viewers || 'viewers');
 
         const isCollapsed = gameId in state.collapsedGameGroups
             ? state.collapsedGameGroups[gameId]
@@ -1144,7 +1141,9 @@ function renderChannels() {
             if (channel.acl_based) nameRow.appendChild(makeElement('span', { class: 'channel-badge acl' }, 'ACL'));
 
             const metaEl = makeElement('div', { class: 'channel-meta' },
-                channel.online && channel.viewers !== null ? channel.viewers.toLocaleString() + ' viewers' : 'Offline'
+                channel.online && channel.viewers !== null
+                    ? channel.viewers.toLocaleString() + ' ' + pluralForm(channel.viewers, tr('gui.channels.viewer_singular', 'viewer'), tr('gui.channels.viewers_few', null), tr('gui.channels.viewers', 'viewers'))
+                    : tr('gui.channels.offline_short', 'Offline')
             );
 
             bodyEl.replaceChildren(nameRow, metaEl);
@@ -1191,8 +1190,8 @@ function updateDropProgress(data) {
         blacklistBtn.disabled = alreadyBlacklisted;
         blacklistBtn.style.opacity = alreadyBlacklisted ? '0.4' : '';
         blacklistBtn.title = alreadyBlacklisted
-            ? 'Already blacklisted'
-            : 'Blacklist this drop — exclude it permanently while still mining other drops for this game';
+            ? tr('gui.progress.already_blacklisted', 'Already blacklisted')
+            : tr('gui.progress.blacklist_drop_title', 'Blacklist this drop — exclude it permanently while still mining other drops for this game');
     }
 
     const thumbEl = document.getElementById('drop-game-thumb');
@@ -1212,7 +1211,7 @@ function updateDropProgress(data) {
         const link = document.createElement('span');
         link.className = 'drop-campaign-link';
         link.style.cursor = 'pointer';
-        link.title = 'View campaign drops';
+        link.title = tr('gui.progress.view_campaign_drops', 'View campaign drops');
         link.textContent = data.campaign_name;
         link.addEventListener('click', () => showCampaignDropsModal(data.campaign_id, false));
         dropGameEl.replaceChildren(link, document.createTextNode(` (${data.game_name})`));
@@ -1227,12 +1226,20 @@ function updateDropProgress(data) {
     if (pct) pct.textContent = `${Math.round(progress)}%`;
 
     document.getElementById('progress-text').textContent =
-        `${data.current_minutes} / ${data.required_minutes} minutes`;
+        tr('gui.progress.minutes_progress', '{current} / {required} minutes', { current: data.current_minutes, required: data.required_minutes });
 
     // Drops left + time estimate for this campaign
     const campData = data.campaign_id && state.campaigns
         ? Object.values(state.campaigns).find(c => c.id === data.campaign_id || c.campaign_id === data.campaign_id)
         : null;
+    // Campaigns can hold several drops with the same name (Hearthstone: three
+    // "Standard Pack"s) -- tell them apart, or blocking one looks like a no-op.
+    const sameName = (campData?.drops || []).filter(d => d.name === data.drop_name).length > 1;
+    document.getElementById('drop-name').textContent = sameName
+        ? `${data.drop_name} (${data.required_minutes} min)`
+        : data.drop_name;
+    const ignoreBtn = document.getElementById('ignore-campaign-btn');
+    if (ignoreBtn) ignoreBtn.style.display = data.campaign_id ? '' : 'none';
     let dropsLeftEl = document.getElementById('progress-drops-left');
     if (!dropsLeftEl) {
         dropsLeftEl = makeElement('div', { id: 'progress-drops-left', class: 'progress-drops-left' });
@@ -1243,7 +1250,7 @@ function updateDropProgress(data) {
         // hit 100% locally isn't "left" even if Twitch hasn't confirmed the claim yet —
         // exclude both so this doesn't show as stuck forever.
         const unclaimed = campData.drops.filter(d => !d.is_claimed && (d.required_subs || 0) <= 0
-            && (d.current_minutes || 0) < (d.required_minutes || 0));
+            && (d.current_minutes || 0) < (d.required_minutes || 0) && !isDropBlocked(d));
         // Drops in the same campaign share one watch-minutes clock and progress
         // in parallel (current_minutes ticks up for all of them at once) — the
         // campaign finishes when its slowest drop does, so remaining time is the
@@ -1252,11 +1259,11 @@ function updateDropProgress(data) {
         const h = Math.floor(remainMins / 60), m = Math.round(remainMins % 60);
         const timeStr = h > 0 ? `~${h}h ${m}m` : remainMins > 0 ? `~${m}m` : null;
         dropsLeftEl.textContent = unclaimed.length > 0
-            ? `${unclaimed.length} drop${unclaimed.length !== 1 ? 's' : ''} left${timeStr ? ' · ' + timeStr : ''}`
-            : '✓ All drops claimed';
+            ? dropsLeftText(unclaimed.length) + (timeStr ? ' · ' + timeStr : '')
+            : tr('gui.campaign_modal.empty_remaining', '✓ All drops claimed');
         dropsLeftEl.style.display = '';
         dropsLeftEl.style.cursor = unclaimed.length > 0 ? 'pointer' : '';
-        dropsLeftEl.title = unclaimed.length > 0 ? 'View remaining drops' : '';
+        dropsLeftEl.title = unclaimed.length > 0 ? tr('gui.progress.view_remaining_drops', 'View remaining drops') : '';
         dropsLeftEl.onclick = unclaimed.length > 0
             ? () => showCampaignDropsModal(data.campaign_id, true)
             : null;
@@ -1285,7 +1292,7 @@ function updateRemainingTime(seconds) {
     const minutes = Math.floor(seconds / 60);
     const secs = seconds % 60;
     document.getElementById('progress-time').textContent =
-        `Time remaining: ${minutes}:${secs.toString().padStart(2, '0')}`;
+        tr('gui.progress.time_remaining', 'Time remaining: {time}', { time: `${minutes}:${secs.toString().padStart(2, '0')}` });
 
     if (seconds > 0) {
         // Store the timer ID so we can cancel it if needed
@@ -1820,7 +1827,7 @@ function renderInventory() {
 
         // Toggle button
         const dropCount = campaign.drops.filter(d => !filters.show_sub_drops ? (d.required_subs || 0) === 0 : true).length;
-        const dropWord = dropCount !== 1 ? (inv.drop_plural || 'drops') : (inv.drop_singular || 'drop');
+        const dropWord = dropWordFor(dropCount);
         const toggleBtn = makeElement('button', { class: 'inv-toggle-btn' }, `▸ ${dropCount} ${dropWord}`);
 
         // Remaining drops + time estimate — only show for linked campaigns
@@ -1838,9 +1845,7 @@ function renderInventory() {
         const timeEst = formatTime(remainingMins);
         const progressInfo = campaign.linked && !isIgnored && unclaimedDrops.length > 0
             ? makeElement('div', { class: 'campaign-progress-info' }, '', el => {
-                const remWord = unclaimedDrops.length !== 1 ? (inv.drop_plural || 'drops') : (inv.drop_singular || 'drop');
-                const leftSuffix = inv.drops_left_suffix || 'left';
-                el.appendChild(makeElement('span', { class: 'campaign-remaining-drops' }, `${unclaimedDrops.length} ${remWord} ${leftSuffix}`));
+                el.appendChild(makeElement('span', { class: 'campaign-remaining-drops' }, dropsLeftText(unclaimedDrops.length)));
                 if (timeEst) el.appendChild(makeElement('span', { class: 'campaign-time-est' }, timeEst));
             })
             : null;
@@ -1937,111 +1942,63 @@ function autoCleanWantedQueue() {
     }
 }
 
-let browserLoginRfb = null;
-// Bumped every time the panel is closed or re-opened. A stale RFB's async
-// 'disconnect' event can land after a newer one has already been wired up
-// (the auth flow re-offers a fresh browser after a timeout/cancel, and a
-// socket reconnect re-delivers browser_login_ready), and without this the
-// old handler would schedule a reconnect on top of the live session.
-let browserLoginGeneration = 0;
-
-function closeBrowserLoginPanel() {
-    browserLoginGeneration++;
-    document.getElementById('browser-login-panel').style.display = 'none';
-    // Null out BEFORE disconnect() so the 'disconnect' event handler (see
-    // connectBrowserLoginRfb) sees browserLoginRfb === null and does not
-    // schedule a reconnect for a close WE initiated.
-    const rfb = browserLoginRfb;
-    browserLoginRfb = null;
-    if (rfb) {
-        rfb.disconnect();
-    }
-    document.getElementById('browser-login-canvas-container').innerHTML = '';
-}
-
-async function showBrowserLoginPanel(websocketPath) {
-    // Tear down any previous session's RFB first -- this is re-entered on a
-    // socket reconnect and after the auth flow retries a timed-out or
-    // cancelled login, and two live RFBs on one canvas is never right.
-    closeBrowserLoginPanel();
-    document.getElementById('browser-login-panel').style.display = 'block';
-    await connectBrowserLoginRfb(websocketPath);
-}
-
-async function connectBrowserLoginRfb(websocketPath) {
-    const generation = browserLoginGeneration;
-    const proto = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    const url = `${proto}//${window.location.host}${websocketPath}`;
-    const { default: RFB } = await import('/static/vendor/novnc/core/rfb.js');
-    browserLoginRfb = new RFB(document.getElementById('browser-login-canvas-container'), url);
-    // The server-side display is 1280x800 (see BrowserLoginManager's Xvfb
-    // invocation) and noVNC defaults scaleViewport to false, which would
-    // render the framebuffer at full native size and blow the dashboard
-    // layout out on anything narrower -- phones especially.
-    browserLoginRfb.scaleViewport = true;
-    // A network blip must not abandon the login -- reconnect to the same
-    // websockify bridge (the server-side Chromium session is untouched by
-    // a WebSocket drop) as long as the panel is still open. Only a real
-    // login_status success (see updateLoginStatus) or an explicit cancel
-    // (see cancelBrowserLogin) calls closeBrowserLoginPanel, which nulls
-    // browserLoginRfb out first -- that null check is what stops this from
-    // reconnecting after either of those.
-    //
-    // Any connection failure (bad Origin, bad auth, no login session in
-    // progress, or a real network drop) surfaces here identically as a
-    // generic 'disconnect' -- there is no reliable distinguishable close
-    // code to branch on, so we always just retry.
-    browserLoginRfb.addEventListener('disconnect', () => {
-        if (browserLoginRfb === null || generation !== browserLoginGeneration) return;
-        setTimeout(() => {
-            if (
-                generation === browserLoginGeneration
-                && document.getElementById('browser-login-panel').style.display === 'block'
-            ) {
-                connectBrowserLoginRfb(websocketPath);
-            }
-        }, 2000);
-    });
-}
-
 function loginText(key, fallback) {
     return state.translations?.login?.browser_login?.[key] || fallback;
 }
 
-function showDeviceCodePanel(url, code) {
-    closeBrowserLoginPanel();
-    document.getElementById('device-code-start').style.display = 'none';
-    document.getElementById('device-code-panel').style.display = 'block';
-    document.getElementById('device-code-prompt').textContent =
-        loginText('device_code_prompt', 'Open this page on any device and enter the code:');
-    document.getElementById('device-code-back').textContent =
-        loginText('device_code_back', 'Back to browser login');
-    const link = document.getElementById('device-code-url');
-    // only ever link to Twitch itself
-    link.href = /^https:\/\/(www\.)?twitch\.tv\//.test(url) ? url : 'https://www.twitch.tv/activate';
-    link.textContent = link.href;
-    document.getElementById('device-code-value').textContent = code;
+function loginHelperBase() {
+    return window.location.origin + API_BASE;
 }
 
-function hideDeviceCodePanel() {
-    document.getElementById('device-code-panel').style.display = 'none';
+function showLoginHelperPanel(mode) {
+    document.getElementById('login-helper-intro').textContent = mode === 'local'
+        ? loginText('helper_intro_local', "Not at this computer? Run this command on the PC you're using instead (needs Python 3 and Google Chrome or Edge):")
+        : loginText('helper_intro', "TDM runs on a server, so log in from your own PC: run this command there (needs Python 3 and Google Chrome or Edge). A normal browser window opens -- log in to Twitch and you're done.");
+    const base = loginHelperBase();
+    const command = `python -c "import urllib.request as u;exec(u.urlopen('${base}/login-helper.py').read())" ${base}`;
+    document.getElementById('login-helper-command').textContent = command;
+    document.getElementById('login-helper-download').href = `${base}/login-helper.py`;
+    const host = window.location.hostname;
+    const loopback = host === 'localhost' || host === '127.0.0.1' || host === '[::1]';
+    document.getElementById('login-helper-http-warning').style.display =
+        window.location.protocol === 'http:' && !loopback ? 'block' : 'none';
+    document.getElementById('login-helper-panel').style.display = 'block';
 }
 
-async function startDeviceCodeLogin() {
-    try {
-        await fetch(API_BASE + '/api/login/device-code/start', { method: 'POST' });
-    } catch (error) {
-        console.error('Failed to switch to device-code login:', error);
+function hideLoginHelperPanel() {
+    document.getElementById('login-helper-panel').style.display = 'none';
+}
+
+async function copyLoginHelperCommand() {
+    const button = document.getElementById('login-helper-copy');
+    const code = document.getElementById('login-helper-command');
+    let copied = false;
+    // navigator.clipboard only exists on https/localhost; a plain-http LAN
+    // dashboard falls back to selecting the text and execCommand('copy').
+    if (navigator.clipboard && window.isSecureContext) {
+        try {
+            await navigator.clipboard.writeText(code.textContent);
+            copied = true;
+        } catch (error) {
+            console.error('Copy failed:', error);
+        }
     }
-}
-
-async function cancelDeviceCodeLogin() {
-    hideDeviceCodePanel();
-    try {
-        await fetch(API_BASE + '/api/login/device-code/cancel', { method: 'POST' });
-    } catch (error) {
-        console.error('Failed to go back to browser login:', error);
+    if (!copied) {
+        const range = document.createRange();
+        range.selectNodeContents(code);
+        const selection = window.getSelection();
+        selection.removeAllRanges();
+        selection.addRange(range);
+        try {
+            copied = document.execCommand('copy');
+        } catch (error) {
+            console.error('Copy failed:', error);
+        }
     }
+    button.textContent = copied
+        ? loginText('helper_copied', 'Copied')
+        : loginText('helper_copy_manual', 'Selected -- press Ctrl+C');
+    setTimeout(() => { button.textContent = loginText('helper_copy', 'Copy'); }, 2500);
 }
 
 function updateLoginStatus(data) {
@@ -2050,11 +2007,12 @@ function updateLoginStatus(data) {
     const t = state.translations;
     if (data.user_id) {
         const name = data.user_login || String(data.user_id);
-        statusEl.innerHTML = `<span style="color:var(--success-color);font-weight:600;">✓ @${name}</span>`;
+        const nameSpan = document.createElement('span');
+        nameSpan.style.cssText = 'color:var(--success-color);font-weight:600;';
+        nameSpan.textContent = `✓ @${name}`;
+        statusEl.replaceChildren(nameSpan);
         statusEl.removeAttribute('translation-key');
-        closeBrowserLoginPanel();
-        hideDeviceCodePanel();
-        document.getElementById('device-code-start').style.display = 'none';
+        hideLoginHelperPanel();
         if (loginPanel) loginPanel.classList.add('is-logged-in');
     } else {
         const loggedOut = t.login?.status?.logged_out || 'Not logged in';
@@ -2062,17 +2020,10 @@ function updateLoginStatus(data) {
         statusEl.setAttribute('translation-key', 'logged_out');
         statusEl.style.color = 'var(--text-secondary)';
         if (loginPanel) loginPanel.classList.remove('is-logged-in');
-        if (data.device_code) {
-            showDeviceCodePanel(data.device_code.url, data.device_code.code);
+        if (data.login_helper === 'local' || data.login_helper === 'remote') {
+            showLoginHelperPanel(data.login_helper);
         } else {
-            hideDeviceCodePanel();
-            const startBtn = document.getElementById('device-code-start');
-            startBtn.textContent = loginText(
-                'device_code_use_instead', 'Browser login not working? Log in with a code instead');
-            startBtn.style.display = 'block';
-        }
-        if (data.browser_login_ready) {
-            showBrowserLoginPanel(data.browser_login_ready.websocket_path);
+            hideLoginHelperPanel();
         }
     }
 }
@@ -2265,13 +2216,13 @@ async function loadBotChannelConfig() {
 }
 
 async function botClearChannel(type) {
-    if (!confirm(`Clear the ${type} notification channel?`)) return;
+    if (!confirm(tr('gui.settings.discord_bot.clear_confirm', 'Clear the {type} notification channel?', { type }))) return;
     try {
         const res = await fetch(API_BASE + `/api/discord-bot/config/channel/${type}`, { method: 'DELETE' });
         if (!res.ok) throw new Error(await res.text());
         loadBotChannelConfig();
     } catch (e) {
-        alert('Error: ' + e.message);
+        alert(tr('gui.common.error', 'Error: {error}', { error: e.message }));
     }
 }
 
@@ -2301,7 +2252,7 @@ async function botGenerateCode() {
         }
         if (box) box.style.display = 'block';
     } catch (e) {
-        alert('Error: ' + e.message);
+        alert(tr('gui.common.error', 'Error: {error}', { error: e.message }));
     } finally {
         if (btn) { btn.disabled = false; btn.textContent = state.translations.gui?.settings?.discord_bot?.generate_code || 'Generate code'; }
     }
@@ -2316,7 +2267,7 @@ async function botRevoke() {
         const box = document.getElementById('bot-pair-code-box');
         if (box) box.style.display = 'none';
     } catch (e) {
-        alert('Error: ' + e.message);
+        alert(tr('gui.common.error', 'Error: {error}', { error: e.message }));
     }
 }
 
@@ -2363,7 +2314,7 @@ function toggleIgnoreCampaign(campaignId) {
         ids.push(campaignId);
     }
     state.settings.ignored_campaign_ids = ids;
-    saveSettings();
+    saveSettingsPatch({ ignored_campaign_ids: ids });
     renderInventory();
 }
 
@@ -2383,7 +2334,7 @@ function renderBlacklistedDropIds(ids) {
         btn.addEventListener('click', () => {
             state.settings.blacklisted_drop_ids.splice(idx, 1);
             renderBlacklistedDropIds([...state.settings.blacklisted_drop_ids]);
-            saveSettings();
+            saveSettingsPatch({ blacklisted_drop_ids: state.settings.blacklisted_drop_ids });
         });
         item.appendChild(label);
         item.appendChild(btn);
@@ -2434,19 +2385,33 @@ function addGameToBlacklist(gameName) {
     saveSettings();
 }
 
+function isDropBlocked(drop) {
+    const name = (drop.name || '').toLowerCase();
+    return (state.settings.blacklisted_drop_ids || []).includes(drop.id)
+        || (state.settings.drop_name_blacklist || []).some(kw => kw.trim() && name.includes(kw.trim().toLowerCase()));
+}
+
+function ignoreCurrentCampaign() {
+    const drop = state.currentDrop;
+    if (!drop || !drop.campaign_id) return;
+    if ((state.settings.ignored_campaign_ids || []).includes(drop.campaign_id)) return;
+    if (!confirm(tr('gui.progress.ignore_campaign_confirm', 'Ignore the campaign "{campaign}"? None of its drops will be mined or claimed anymore.', { campaign: drop.campaign_name }))) return;
+    toggleIgnoreCampaign(drop.campaign_id);
+}
+
 function blacklistCurrentDrop() {
     const drop = state.currentDrop;
     if (!drop || !drop.drop_id) return;
     const ids = state.settings.blacklisted_drop_ids || [];
     if (ids.includes(drop.drop_id)) return;
-    if (!confirm(`Permanently blacklist "${drop.drop_name}"? It will be excluded from mining from now on, but other drops for this game will keep being mined.`)) return;
+    if (!confirm(tr('gui.progress.blacklist_confirm', 'Permanently blacklist "{drop}"? It will be excluded from mining from now on, but other drops for this game will keep being mined.', { drop: drop.drop_name }))) return;
     renderBlacklistedDropIds([...ids, drop.drop_id]);
-    saveSettings();
+    saveSettingsPatch({ blacklisted_drop_ids: state.settings.blacklisted_drop_ids });
     const btn = document.getElementById('blacklist-drop-btn');
     if (btn) {
         btn.disabled = true;
         btn.style.opacity = '0.4';
-        btn.title = 'Already blacklisted';
+        btn.title = tr('gui.progress.already_blacklisted', 'Already blacklisted');
     }
 }
 
@@ -2550,7 +2515,7 @@ function renderPreferredWaiting() {
         name.textContent = g;
         const badge = document.createElement('span');
         badge.className = 'wq-waiting-badge';
-        badge.textContent = 'No campaign';
+        badge.textContent = tr('gui.wanted.no_campaign', 'No campaign');
         item.append(name, badge);
         list.appendChild(item);
     });
@@ -2939,15 +2904,6 @@ async function exitManualMode() {
     }
 }
 
-async function cancelBrowserLogin() {
-    try {
-        await fetch(API_BASE + '/api/login/browser/cancel', { method: 'POST' });
-    } catch (error) {
-        console.error('Failed to cancel browser login:', error);
-    }
-    closeBrowserLoginPanel();
-}
-
 async function verifyProxy() {
     const proxyInput = document.getElementById('proxy-url');
     const proxyUrl = proxyInput ? proxyInput.value.trim() : '';
@@ -2958,11 +2914,11 @@ async function verifyProxy() {
     // Reset display
     resultDiv.style.display = 'block';
     resultDiv.className = 'verify-result loading';
-    resultDiv.textContent = 'Verifying connection...';
+    resultDiv.textContent = tr('gui.settings.proxy_verifying', 'Verifying connection...');
 
     if (!proxyUrl) {
         resultDiv.className = 'verify-result error';
-        resultDiv.textContent = 'Please enter a proxy URL first.';
+        resultDiv.textContent = tr('gui.settings.proxy_empty', 'Please enter a proxy URL first.');
         return;
     }
 
@@ -2984,7 +2940,7 @@ async function verifyProxy() {
         }
     } catch (error) {
         resultDiv.className = 'verify-result error';
-        resultDiv.textContent = `Error: ${error.message}`;
+        resultDiv.textContent = tr('gui.common.error', 'Error: {error}', { error: error.message });
     }
 }
 
@@ -3052,7 +3008,7 @@ function renderChannelOverrides(overrides) {
     if (entries.length === 0) {
         const empty = document.createElement('div');
         empty.style.cssText = 'color:#8991A6;font-size:0.85rem;padding:4px 0;';
-        empty.textContent = 'No per-channel overrides configured.';
+        empty.textContent = tr('gui.settings.predictions.no_overrides', 'No per-channel overrides configured.');
         container.appendChild(empty);
         return;
     }
@@ -3061,7 +3017,15 @@ function renderChannelOverrides(overrides) {
     const thead = document.createElement('thead');
     const hrow = document.createElement('tr');
     hrow.style.cssText = 'color:#8991A6;text-align:left;';
-    ['Channel','Strategy','Bet%','Max pts','Min bal','Delay(s)',''].forEach(label => {
+    [
+        tr('gui.settings.predictions.col_channel', 'Channel'),
+        tr('gui.settings.predictions.col_strategy', 'Strategy'),
+        tr('gui.settings.predictions.col_bet_pct', 'Bet%'),
+        tr('gui.settings.predictions.col_max_pts', 'Max pts'),
+        tr('gui.settings.predictions.col_min_balance', 'Min bal'),
+        tr('gui.settings.predictions.col_delay', 'Delay(s)'),
+        '',
+    ].forEach(label => {
         const th = document.createElement('th');
         th.style.cssText = 'padding:4px 8px;';
         th.textContent = label;
@@ -3114,7 +3078,7 @@ function _buildOverrideRow(channel, ov) {
         inp.className = 'settings-input';
         inp.style.cssText = 'font-size:0.8rem;width:72px;padding:2px 4px;';
         inp.dataset.key = key;
-        inp.placeholder = '(global)';
+        inp.placeholder = tr('gui.settings.predictions.global_placeholder', '(global)');
         if (val !== undefined && val !== null) inp.value = val;
         inp.min = min;
         if (max !== null) inp.max = max;
@@ -3127,7 +3091,7 @@ function _buildOverrideRow(channel, ov) {
     const tdRm = document.createElement('td');
     tdRm.style.cssText = 'padding:4px 6px;';
     const btn = document.createElement('button');
-    btn.textContent = 'Remove';
+    btn.textContent = tr('gui.common.remove', 'Remove');
     btn.className = 'secondary-btn';
     btn.style.cssText = 'padding:2px 8px;font-size:0.8rem;color:#E5484D;border-color:#E5484D;white-space:nowrap;';
     btn.onclick = () => _removeChannelOverride(channel, tr);
@@ -3164,7 +3128,7 @@ async function _removeChannelOverride(channel, tr) {
     if (container && !container.querySelector('tr[data-channel]')) {
         const empty = document.createElement('div');
         empty.style.cssText = 'color:#8991A6;font-size:0.85rem;padding:4px 0;';
-        empty.textContent = 'No per-channel overrides configured.';
+        empty.textContent = tr('gui.settings.predictions.no_overrides', 'No per-channel overrides configured.');
         container.replaceChildren(empty);
     }
     try {
@@ -3222,6 +3186,22 @@ function saveSettings() {
     }, 400);
 }
 
+// The drop blacklist and ignored campaigns are saved on their own, at once:
+// a settings_updated broadcast landing during saveSettings()' debounce (or
+// while a confirm() dialog is open) would otherwise reset them to the server's
+// old list before the save goes out, silently dropping the user's click.
+async function saveSettingsPatch(patch) {
+    try {
+        await fetch(API_BASE + '/api/settings', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(patch)
+        });
+    } catch (error) {
+        console.error('Failed to save settings:', error);
+    }
+}
+
 async function _saveSettingsNow() {
     if (!state.settingsLoaded) {
         // A change event fired (e.g. browser restoring form state on reload) before the
@@ -3261,8 +3241,6 @@ async function _saveSettingsNow() {
         auto_add_excluded_games: state.settings.auto_add_excluded_games || [],
         drop_name_blacklist: (document.getElementById('drop-blacklist-input')?.value || '')
             .split(',').map(s => s.trim()).filter(Boolean),
-        blacklisted_drop_ids: state.settings.blacklisted_drop_ids || [],
-        ignored_campaign_ids: state.settings.ignored_campaign_ids || [],
         scheduler_enabled: document.getElementById('scheduler-enabled')?.checked || false,
         scheduler_start: document.getElementById('scheduler-start')?.value || '22:00',
         scheduler_stop: document.getElementById('scheduler-stop')?.value || '08:00',
@@ -3336,13 +3314,13 @@ function updatePauseState(paused) {
     const icon = btn.querySelector('.qc-icon');
     if (paused) {
         if (icon) icon.textContent = '▶';
-        if (strong) strong.textContent = 'Resume';
-        if (small) small.textContent = 'Click to resume';
+        if (strong) strong.textContent = tr('gui.quick_controls.resume_label', 'Resume');
+        if (small) small.textContent = tr('gui.quick_controls.resume_desc', 'Click to resume');
         btn.classList.add('qc-btn--active');
     } else {
         if (icon) icon.textContent = '⏸';
-        if (strong) strong.textContent = 'Pause';
-        if (small) small.textContent = 'Pause / resume the miner';
+        if (strong) strong.textContent = tr('gui.quick_controls.pause_label', 'Pause');
+        if (small) small.textContent = tr('gui.quick_controls.pause_desc', 'Pause / resume the miner');
         btn.classList.remove('qc-btn--active');
     }
 }
@@ -3361,7 +3339,7 @@ async function togglePause() {
 async function testWebhook(type) {
     const id = type === 'drops' ? 'discord-webhook-drops' : 'discord-webhook-points';
     const url = document.getElementById(id)?.value.trim();
-    if (!url) { alert('No webhook URL set.'); return; }
+    if (!url) { alert(tr('gui.settings.webhook_missing', 'No webhook URL set.')); return; }
     try {
         const resp = await fetch(API_BASE + '/api/settings/test-webhook', {
             method: 'POST',
@@ -3371,7 +3349,7 @@ async function testWebhook(type) {
         const data = await resp.json();
         alert(data.success ? '✅ ' + data.message : '❌ ' + data.message);
     } catch (e) {
-        alert('❌ Request failed: ' + e.message);
+        alert(tr('gui.common.request_failed', '❌ Request failed: {error}', { error: e.message }));
     }
 }
 
@@ -3437,6 +3415,116 @@ async function fetchAndApplyTranslations() {
     }
 }
 
+function setTabLabel(button, text) {
+    const label = button.querySelector('.tab-label');
+    (label || button).textContent = text;
+    if (button.classList.contains('active')) document.getElementById('page-title').textContent = text;
+}
+
+function openSidebar() {
+    document.body.classList.add('sidebar-open');
+    document.getElementById('sidebar-toggle').setAttribute('aria-expanded', 'true');
+    // Keep keyboard/screen-reader focus inside the drawer while it covers the page.
+    document.querySelector('.app-main').inert = true;
+    document.querySelector('#sidebar .tab-button.active, #sidebar .tab-button, #sidebar .acc-tab-btn')?.focus();
+}
+
+// Phones get the five sections in a fixed bottom bar; the drawer (opened from
+// the top bar's accounts button) then only holds the account list.
+const PHONE_QUERY = window.matchMedia('(max-width: 768px)');
+
+function placeNav() {
+    const nav = document.querySelector('nav.tabs');
+    const target = PHONE_QUERY.matches
+        ? document.getElementById('bottom-nav')
+        : document.querySelector('#sidebar .sidebar-brand');
+    if (PHONE_QUERY.matches) {
+        if (nav.parentElement !== target) target.appendChild(nav);
+    } else if (nav.previousElementSibling !== target) {
+        target.after(nav);
+    }
+    document.getElementById('sidebar-toggle').setAttribute(
+        'aria-label', PHONE_QUERY.matches ? 'Switch account' : 'Open navigation');
+}
+
+function closeSidebar() {
+    const wasOpen = document.body.classList.contains('sidebar-open');
+    document.body.classList.remove('sidebar-open');
+    document.getElementById('sidebar-toggle').setAttribute('aria-expanded', 'false');
+    document.querySelector('.app-main').inert = false;
+    if (wasOpen) document.getElementById('sidebar-toggle').focus();
+}
+
+/**
+ * Look up a translation by its dotted key path (e.g. "gui.common.add") in the
+ * currently loaded language file, falling back to the given English text.
+ * {placeholders} in the result are replaced from `vars`.
+ */
+function tr(path, fallback, vars) {
+    let text = path.split('.').reduce(
+        (node, key) => (node && node[key] !== undefined ? node[key] : undefined),
+        state.translations
+    );
+    if (typeof text !== 'string') text = fallback;
+    if (vars) {
+        for (const [key, value] of Object.entries(vars)) text = text.split(`{${key}}`).join(String(value));
+    }
+    return text;
+}
+
+/**
+ * Show the current game under the status line. The game name is remembered so
+ * applyTranslations() can re-render the "Game:" label after a language switch.
+ */
+function setStatusGame(game) {
+    state.statusGame = game || null;
+    const gameEl = document.getElementById('status-game');
+    if (!gameEl) return;
+    if (game) {
+        gameEl.textContent = tr('gui.progress.game', 'Game:') + ' ' + game;
+        gameEl.style.display = '';
+    } else {
+        gameEl.textContent = '';
+        gameEl.style.display = 'none';
+    }
+}
+
+/**
+ * Pick a plural form. `few` is optional and only used for languages that have
+ * a separate form for 2-4 (e.g. Czech "2 dropy" vs "5 dropů"); otherwise `many`.
+ */
+function pluralForm(n, one, few, many) {
+    if (n === 1) return one;
+    if (n >= 2 && n <= 4 && few) return few;
+    return many;
+}
+
+function dropWordFor(n) {
+    return pluralForm(n, tr('gui.inventory.drop_singular', 'drop'), tr('gui.inventory.drop_few', null), tr('gui.inventory.drop_plural', 'drops'));
+}
+
+function dropsLeftText(n) {
+    return tr('gui.inventory.drops_left_format', '{count} {drops} left', { count: n, drops: dropWordFor(n) });
+}
+
+/**
+ * Apply translations to static markup that declares its key in index.html:
+ * data-i18n (text), data-i18n-title, data-i18n-placeholder, data-i18n-aria-label.
+ * Elements whose key is missing from the language file keep their English text.
+ */
+function applyDataI18n() {
+    const bind = (attr, apply) => {
+        document.querySelectorAll(`[${attr}]`).forEach(el => {
+            const text = tr(el.getAttribute(attr), null);
+            if (typeof text === 'string') apply(el, text);
+        });
+    };
+    bind('data-i18n', (el, text) => { el.textContent = text; });
+    bind('data-i18n-title', (el, text) => { el.title = text; });
+    bind('data-i18n-placeholder', (el, text) => { el.placeholder = text; });
+    bind('data-i18n-aria-label', (el, text) => { el.setAttribute('aria-label', text); });
+}
+
 function applyTranslations(t) {
     // Update tab buttons
     const tabButtons = {
@@ -3447,11 +3535,13 @@ function applyTranslations(t) {
         'analytics': document.querySelector('[data-tab="analytics"]'),
     };
 
-    if (tabButtons.main && t.gui?.tabs) tabButtons.main.textContent = t.gui.tabs.main;
-    if (tabButtons.inventory && t.gui?.tabs) tabButtons.inventory.textContent = t.gui.tabs.inventory;
-    if (tabButtons.settings && t.gui?.tabs) tabButtons.settings.textContent = t.gui.tabs.settings;
-    if (tabButtons.help && t.gui?.tabs) tabButtons.help.textContent = t.gui.tabs.help;
-    if (tabButtons.analytics && t.gui?.tabs) tabButtons.analytics.textContent = t.gui.tabs.analytics ?? 'Analytics';
+    if (tabButtons.main && t.gui?.tabs) setTabLabel(tabButtons.main, t.gui.tabs.main);
+    const accountsTitle = document.getElementById('sidebar-accounts-title');
+    if (accountsTitle && t.gui?.sidebar?.accounts) accountsTitle.textContent = t.gui.sidebar.accounts;
+    if (tabButtons.inventory && t.gui?.tabs) setTabLabel(tabButtons.inventory, t.gui.tabs.inventory);
+    if (tabButtons.settings && t.gui?.tabs) setTabLabel(tabButtons.settings, t.gui.tabs.settings);
+    if (tabButtons.help && t.gui?.tabs) setTabLabel(tabButtons.help, t.gui.tabs.help);
+    if (tabButtons.analytics && t.gui?.tabs) setTabLabel(tabButtons.analytics, t.gui.tabs.analytics ?? 'Analytics');
 
     // Update Main tab - Login section
     const mainTab = document.getElementById('main-tab');
@@ -3475,32 +3565,14 @@ function applyTranslations(t) {
         const loginButton = document.getElementById('login-button');
         if (loginButton) loginButton.textContent = t.gui.login.button;
 
-        // Update OAuth display text
-        const oauthDisplay = document.getElementById('oauth-code-display');
-        if (oauthDisplay) {
-            const oauthP = oauthDisplay.querySelector('p');
-            if (oauthP) {
-                const link = oauthP.querySelector('a');
-                if (link) {
-                    oauthP.textContent = t.gui.login.oauth_prompt + ' ';
-                    link.textContent = t.gui.login.oauth_activate;
-                    oauthP.appendChild(link);
-                }
-            }
-
-            const oauthConfirmBtn = document.getElementById('oauth-confirm');
-            if (oauthConfirmBtn) oauthConfirmBtn.textContent = t.gui.login.oauth_confirm;
-        }
-
-        // Update real-browser login panel text
+        // Update login-helper panel text
         if (t.login?.browser_login) {
-            const browserLoginInstructions = document.getElementById('browser-login-instructions');
-            if (browserLoginInstructions) browserLoginInstructions.textContent = t.login.browser_login.instructions;
-            const browserLoginVpsWarning = document.getElementById('browser-login-vps-warning');
-            if (browserLoginVpsWarning) browserLoginVpsWarning.textContent = t.login.browser_login.vps_warning;
-
-            const browserLoginCancel = document.getElementById('browser-login-cancel');
-            if (browserLoginCancel) browserLoginCancel.textContent = t.login.browser_login.cancel;
+            const bl = t.login.browser_login;
+            const set = (id, text) => { const el = document.getElementById(id); if (el && text) el.textContent = text; };
+            set('login-helper-copy', bl.helper_copy);
+            set('login-helper-download', bl.helper_download);
+            set('login-helper-py-hint', bl.helper_py_hint);
+            set('login-helper-http-warning', bl.helper_http_warning);
         }
     }
 
@@ -3788,7 +3860,7 @@ function applyTranslations(t) {
         const gamesLabel = document.getElementById('analytics-games-label');
         if (gamesLabel) gamesLabel.textContent = a.games_label;
         const lastLabel = document.getElementById('analytics-last-label');
-        if (lastLabel) lastLabel.textContent = 'Channel Points';
+        if (lastLabel) lastLabel.textContent = a.channel_points || 'Channel Points';
         const byGameHeader = document.getElementById('analytics-by-game-header');
         if (byGameHeader) byGameHeader.textContent = a.claims_by_game;
         const cpHeader = document.getElementById('analytics-cp-header');
@@ -3907,6 +3979,9 @@ function applyTranslations(t) {
         // currently paused, updatePauseState(true) (driven by live status,
         // called elsewhere) will overwrite this with the "Resume" wording.
         if (!state.paused) setQcBtn('pause-resume-btn', qc.pause_title, qc.pause_label, qc.pause_desc);
+        // The defaults above don't know the miner's current state (mining /
+        // idle) - re-apply the state-dependent labels in the new language.
+        updateQCButtons(document.getElementById('status-text')?.textContent || '');
     }
 
     // Update "Manage Accounts" trigger button in the header
@@ -3977,6 +4052,11 @@ function applyTranslations(t) {
             else connIndicator.textContent = '● ' + label;
         }
     }
+
+    // Static markup bound via data-i18n attributes (see applyDataI18n)
+    applyDataI18n();
+    // Re-render the "Game:" line under the status in the new language
+    if (state.statusGame) setStatusGame(state.statusGame);
 }
 
 async function reloadCampaigns() {
@@ -4012,7 +4092,7 @@ function renderPredictions(preds) {
     const summaryEl = document.getElementById("pred-summary");
     if (summaryEl) {
         summaryEl.replaceChildren();
-        [{ label: "Total", value: preds.length }, { label: "Win Rate", value: `${winRate}%` }, { label: "Net", value: `${net >= 0 ? "+" : ""}${net.toLocaleString()} pts`, color: net >= 0 ? "#1DA980" : "#E5484D" }]
+        [{ label: tr('gui.analytics.pred_total', 'Total'), value: preds.length }, { label: tr('gui.analytics.pred_win_rate', 'Win Rate'), value: `${winRate}%` }, { label: tr('gui.analytics.pred_net', 'Net'), value: (net >= 0 ? "+" : "") + tr('gui.common.points_short', '{points} pts', { points: net.toLocaleString() }), color: net >= 0 ? "#1DA980" : "#E5484D" }]
             .forEach(c => { const div = document.createElement("div"); div.className = "stat-card"; if (c.color) div.style.color = c.color; div.textContent = `${c.label}: ${c.value}`; summaryEl.appendChild(div); });
     }
     const tbody = document.getElementById("pred-tbody");
@@ -4233,18 +4313,18 @@ async function loadInstances() {
                 rmBtn.className = 'btn-secondary';
                 rmBtn.style.cssText = 'padding:4px 10px;font-size:.8rem;width:auto;color:#E5484D;border-color:#E5484D;';
                 rmBtn.textContent = '✕';
-                rmBtn.title = 'Remove instance';
+                rmBtn.title = tr('gui.system.instance_remove_title', 'Remove instance');
                 rmBtn.onclick = async () => {
-                    if (!confirm(`Remove Account ${inst.n}? The process will be stopped. Data is preserved.`)) return;
+                    if (!confirm(tr('gui.system.instance_remove_confirm', 'Remove Account {n}? The process will be stopped. Data is preserved.', { n: inst.n }))) return;
                     rmBtn.disabled = true;
-                    if (statusEl) { statusEl.textContent = `Removing instance ${inst.n}...`; statusEl.style.display = 'block'; }
+                    if (statusEl) { statusEl.textContent = tr('gui.system.instance_removing', 'Removing instance {n}...', { n: inst.n }); statusEl.style.display = 'block'; }
                     const res = await fetch(`/api/instances/${inst.n}`, { method: 'DELETE' });
                     if (res.ok) {
-                        if (statusEl) { statusEl.textContent = `Instance ${inst.n} removed. Reloading...`; }
+                        if (statusEl) { statusEl.textContent = tr('gui.system.instance_removed', 'Instance {n} removed. Reloading...', { n: inst.n }); }
                         setTimeout(() => { loadInstanceTabs(); loadInstances(); if (statusEl) statusEl.style.display = 'none'; }, 2000);
                     } else {
                         const err = await res.json().catch(() => ({}));
-                        if (statusEl) { statusEl.textContent = `Error: ${err.detail || 'Failed'}`; statusEl.style.display = 'block'; }
+                        if (statusEl) { statusEl.textContent = tr('gui.common.error', 'Error: {error}', { error: err.detail || tr('gui.common.failed', 'Failed') }); statusEl.style.display = 'block'; }
                         rmBtn.disabled = false;
                     }
                 };
@@ -4253,7 +4333,7 @@ async function loadInstances() {
             listEl.appendChild(row);
         });
     } catch(e) {
-        if (listEl) listEl.textContent = 'Failed to load instances.';
+        if (listEl) listEl.textContent = tr('gui.system.instances_load_failed', 'Failed to load instances.');
     }
 }
 
@@ -4268,7 +4348,7 @@ async function loadAccounts() {
         listEl.replaceChildren();
         if (data.accounts.length === 0) {
             const msg = document.createElement('div');
-            msg.textContent = 'No accounts saved yet.';
+            msg.textContent = tr('gui.system.no_accounts', 'No accounts saved yet.');
             msg.style.cssText = 'font-size:0.82rem;color:var(--text-secondary);padding:4px 0;';
             listEl.appendChild(msg);
             return;
@@ -4286,7 +4366,7 @@ async function loadAccounts() {
             // Edit pencil button
             const editBtn = document.createElement('button');
             editBtn.textContent = '✏️';
-            editBtn.title = 'Rename';
+            editBtn.title = tr('gui.common.rename', 'Rename');
             editBtn.style.cssText = 'font-size:0.75rem;padding:2px 6px;border-radius:4px;border:1px solid var(--border-color);background:transparent;color:var(--text-secondary);cursor:pointer;';
             editBtn.addEventListener('click', () => {
                 // Replace nameEl with inline input
@@ -4312,7 +4392,7 @@ async function loadAccounts() {
                         if (!r.ok) throw new Error(await r.text());
                         loadAccounts();
                     } catch (e) {
-                        if (statusEl) { statusEl.textContent = 'Error: ' + e.message; statusEl.style.display = 'block'; statusEl.style.color = '#E5484D'; }
+                        if (statusEl) { statusEl.textContent = tr('gui.common.error', 'Error: {error}', { error: e.message }); statusEl.style.display = 'block'; statusEl.style.color = '#E5484D'; }
                         loadAccounts();
                     }
                 };
@@ -4323,29 +4403,29 @@ async function loadAccounts() {
 
             if (acc.active) {
                 const badge = document.createElement('span');
-                badge.textContent = 'Active';
+                badge.textContent = tr('gui.system.account_active', 'Active');
                 badge.style.cssText = 'font-size:0.72rem;font-weight:600;color:#A970FF;background:rgba(191,148,255,0.16);padding:2px 8px;border-radius:20px;';
                 row.appendChild(badge);
             }
 
             if (!acc.has_cookies) {
                 const warn = document.createElement('span');
-                warn.textContent = 'Not logged in';
+                warn.textContent = tr('gui.system.not_logged_in', 'Not logged in');
                 warn.style.cssText = 'font-size:0.72rem;color:#C8850A;';
                 row.appendChild(warn);
             }
 
             if (!acc.active) {
                 const switchBtn = document.createElement('button');
-                switchBtn.textContent = 'Switch';
+                switchBtn.textContent = tr('gui.common.switch', 'Switch');
                 switchBtn.style.cssText = 'font-size:0.78rem;padding:3px 10px;border-radius:4px;border:1px solid var(--border-color);background:transparent;color:var(--text-primary);cursor:pointer;';
                 switchBtn.addEventListener('click', async () => {
-                    if (!confirm(`Switch to account "${acc.label}"? The miner will restart.`)) return;
+                    if (!confirm(tr('gui.system.switch_confirm', 'Switch to account "{label}"? The miner will restart.', { label: acc.label }))) return;
                     try {
                         await fetch(API_BASE + '/api/accounts/switch', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({label: acc.label}) });
-                        if (statusEl) { statusEl.textContent = `Switched to ${acc.label}, restarting...`; statusEl.style.display = 'block'; statusEl.style.color = '#1DA980'; }
+                        if (statusEl) { statusEl.textContent = tr('gui.system.switched', 'Switched to {label}, restarting...', { label: acc.label }); statusEl.style.display = 'block'; statusEl.style.color = '#1DA980'; }
                     } catch (e) {
-                        if (statusEl) { statusEl.textContent = 'Error: ' + e.message; statusEl.style.display = 'block'; statusEl.style.color = '#E5484D'; }
+                        if (statusEl) { statusEl.textContent = tr('gui.common.error', 'Error: {error}', { error: e.message }); statusEl.style.display = 'block'; statusEl.style.color = '#E5484D'; }
                     }
                 });
                 row.appendChild(switchBtn);
@@ -4354,12 +4434,12 @@ async function loadAccounts() {
                 delBtn.textContent = '✕';
                 delBtn.style.cssText = 'font-size:0.78rem;padding:3px 8px;border-radius:4px;border:1px solid var(--border-color);background:transparent;color:#E5484D;cursor:pointer;';
                 delBtn.addEventListener('click', async () => {
-                    if (!confirm(`Delete account "${acc.label}"?`)) return;
+                    if (!confirm(tr('gui.system.delete_confirm', 'Delete account "{label}"?', { label: acc.label }))) return;
                     try {
                         await fetch(API_BASE + `/api/accounts/${encodeURIComponent(acc.label)}`, { method: 'DELETE' });
                         loadAccounts();
                     } catch (e) {
-                        if (statusEl) { statusEl.textContent = 'Error: ' + e.message; statusEl.style.display = 'block'; statusEl.style.color = '#E5484D'; }
+                        if (statusEl) { statusEl.textContent = tr('gui.common.error', 'Error: {error}', { error: e.message }); statusEl.style.display = 'block'; statusEl.style.color = '#E5484D'; }
                     }
                 });
                 row.appendChild(delBtn);
@@ -4368,7 +4448,7 @@ async function loadAccounts() {
             listEl.appendChild(row);
         });
     } catch (e) {
-        if (statusEl) { statusEl.textContent = 'Error loading accounts.'; statusEl.style.display = 'block'; }
+        if (statusEl) { statusEl.textContent = tr('gui.system.accounts_load_failed', 'Error loading accounts.'); statusEl.style.display = 'block'; }
     }
 }
 
@@ -4383,7 +4463,11 @@ function switchTab(tabName) {
 
     // Show selected tab
     document.getElementById(`${tabName}-tab`).classList.add('active');
-    document.querySelector(`[data-tab="${tabName}"]`).classList.add('active');
+    const activeButton = document.querySelector(`[data-tab="${tabName}"]`);
+    activeButton.classList.add('active');
+    document.getElementById('page-title').textContent =
+        (activeButton.querySelector('.tab-label') || activeButton).textContent;
+    closeSidebar();
     if (tabName === 'analytics') { loadStats(); loadDropHistory(); loadPredictions(); initAnalyticsTab(); }
     if (tabName === 'inventory' || tabName === 'settings') {
         if (Object.keys(state.campaigns).length === 0) reloadCampaigns();
@@ -4465,7 +4549,11 @@ async function loadInstanceTabs() {
         applyUsernameVisibility();
     } catch(e) {
         // fallback: render current instance button only
-        container.innerHTML = `<button class="acc-tab-btn active-acc" data-acc-n="${ACC_NUM}">Account ${ACC_NUM}</button>`;
+        const btn = document.createElement('button');
+        btn.className = 'acc-tab-btn active-acc';
+        btn.dataset.accN = String(ACC_NUM);
+        btn.textContent = tr('gui.accounts_manager.account_fallback_label', 'Account {n}', { n: ACC_NUM });
+        container.replaceChildren(btn);
     }
 }
 
@@ -4511,6 +4599,17 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
+    // Sidebar drawer (tablet/phone)
+    placeNav();
+    PHONE_QUERY.addEventListener('change', placeNav);
+    document.getElementById('sidebar-toggle').addEventListener('click', () => {
+        if (document.body.classList.contains('sidebar-open')) closeSidebar(); else openSidebar();
+    });
+    document.getElementById('sidebar-backdrop').addEventListener('click', closeSidebar);
+    document.addEventListener('keydown', (event) => {
+        if (event.key === 'Escape') closeSidebar();
+    });
+
     // Tab switching
     document.querySelectorAll('.tab-button').forEach(button => {
         button.addEventListener('click', () => {
@@ -4519,9 +4618,7 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     // Login form
-    document.getElementById('browser-login-cancel').addEventListener('click', cancelBrowserLogin);
-    document.getElementById('device-code-start').addEventListener('click', startDeviceCodeLogin);
-    document.getElementById('device-code-back').addEventListener('click', cancelDeviceCodeLogin);
+    document.getElementById('login-helper-copy').addEventListener('click', copyLoginHelperCommand);
 
     // Settings - auto-save on change
     document.getElementById('dark-mode').addEventListener('change', (e) => {
@@ -4601,6 +4698,7 @@ document.addEventListener('DOMContentLoaded', () => {
         link.addEventListener('click', () => {
             const toggle = document.getElementById('help-subnav-toggle');
             if (toggle) toggle.checked = false;
+            closeSidebar();
         });
     });
     document.getElementById('allow-unknown-link')?.addEventListener('change', (e) => {
@@ -4627,7 +4725,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (this.checked && 'Notification' in window) {
             if (Notification.permission === 'denied') {
                 this.checked = false;
-                alert('Browser notifications are blocked. Please allow them in your browser settings (click the lock icon in the address bar) and reload the page.');
+                alert(tr('gui.settings.push_blocked', 'Browser notifications are blocked. Please allow them in your browser settings (click the lock icon in the address bar) and reload the page.'));
                 return;
             }
             if (Notification.permission !== 'granted') {
@@ -4645,7 +4743,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     document.getElementById('cp-tab-refresh-btn')?.addEventListener('click', async () => {
         const btn = document.getElementById('cp-tab-refresh-btn');
-        if (btn) btn.textContent = '↻ Loading...';
+        if (btn) btn.textContent = tr('gui.common.loading_btn', '↻ Loading...');
         const logins = Object.keys(state.sessionPoints);
         await Promise.all(logins.map(async login => {
             try {
@@ -4659,7 +4757,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }));
         renderChannelPointsTab();
         renderPointsTracker();
-        if (btn) btn.textContent = '↻ Refresh';
+        if (btn) btn.textContent = tr('gui.analytics.refresh', '↻ Refresh');
     });
     document.getElementById("qc-check-drops-btn")?.addEventListener("click", async () => {
         const btn = document.getElementById("qc-check-drops-btn");
@@ -4682,7 +4780,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 alert(d.detail || `Skip failed (${r.status})`);
             }
         } catch (e) {
-            alert("Error: " + e.message);
+            alert(tr('gui.common.error', 'Error: {error}', { error: e.message }));
         } finally {
             setTimeout(() => { if (btn) { btn.style.opacity = ""; btn.style.pointerEvents = ""; } }, 2000);
         }
@@ -4712,7 +4810,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (!ids.includes(val)) {
             ids.push(val);
             renderBlacklistedDropIds([...ids]);
-            saveSettings();
+            saveSettingsPatch({ blacklisted_drop_ids: state.settings.blacklisted_drop_ids });
         }
         input.value = '';
     });
@@ -4838,20 +4936,20 @@ document.addEventListener('DOMContentLoaded', () => {
         const status = document.getElementById('system-status');
         try {
             await fetch(API_BASE + '/api/reload', { method: 'POST' });
-            if (status) { status.textContent = 'Campaigns reload triggered.'; status.className = 'system-status success'; }
+            if (status) { status.textContent = tr('gui.system.reload_ok', 'Campaigns reload triggered.'); status.className = 'system-status success'; }
         } catch (e) {
-            if (status) { status.textContent = 'Error: ' + e.message; status.className = 'system-status error'; }
+            if (status) { status.textContent = tr('gui.common.error', 'Error: {error}', { error: e.message }); status.className = 'system-status error'; }
         }
     });
 
     document.getElementById('system-restart-btn')?.addEventListener('click', async () => {
         const status = document.getElementById('system-status');
-        if (!confirm('Restart the miner? PM2 will restart it automatically.')) return;
+        if (!confirm(tr('gui.system.restart_confirm', 'Restart the miner? PM2 will restart it automatically.'))) return;
         try {
             await fetch(API_BASE + '/api/restart', { method: 'POST' });
-            if (status) { status.textContent = 'Miner restarting via PM2...'; status.className = 'system-status success'; }
+            if (status) { status.textContent = tr('gui.system.restart_ok', 'Miner restarting via PM2...'); status.className = 'system-status success'; }
         } catch (e) {
-            if (status) { status.textContent = 'Error: ' + e.message; status.className = 'system-status error'; }
+            if (status) { status.textContent = tr('gui.common.error', 'Error: {error}', { error: e.message }); status.className = 'system-status error'; }
         }
     });
 
@@ -4871,7 +4969,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 status.className = 'system-status success';
             }
         } catch (e) {
-            if (status) { status.textContent = 'Error: ' + e.message; status.className = 'system-status error'; }
+            if (status) { status.textContent = tr('gui.common.error', 'Error: {error}', { error: e.message }); status.className = 'system-status error'; }
         }
     });
 
@@ -4889,7 +4987,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 alert(d.detail || 'Switch failed');
             }
         } catch (e) {
-            alert('Error: ' + e.message);
+            alert(tr('gui.common.error', 'Error: {error}', { error: e.message }));
         }
     });
 
@@ -4901,7 +4999,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 alert(d.detail || 'No idle channels online');
             }
         } catch (e) {
-            alert('Error: ' + e.message);
+            alert(tr('gui.common.error', 'Error: {error}', { error: e.message }));
         }
     });
 
@@ -4915,14 +5013,14 @@ document.addEventListener('DOMContentLoaded', () => {
         const btn = document.getElementById('add-instance-btn');
         const statusEl = document.getElementById('instances-status');
         if (btn) btn.disabled = true;
-        if (statusEl) { statusEl.textContent = 'Creating new instance... (this may take ~10s)'; statusEl.style.display = 'block'; }
+        if (statusEl) { statusEl.textContent = tr('gui.system.instance_creating', 'Creating new instance... (this may take ~10s)'); statusEl.style.display = 'block'; }
         const res = await fetch('/api/instances', { method: 'POST' });
         if (res.ok) {
-            if (statusEl) { statusEl.textContent = 'Instance created! Reloading...'; }
+            if (statusEl) { statusEl.textContent = tr('gui.system.instance_created', 'Instance created! Reloading...'); }
             setTimeout(() => { loadInstanceTabs(); loadInstances(); if (statusEl) statusEl.style.display = 'none'; }, 3000);
         } else {
             const err = await res.json().catch(() => ({}));
-            if (statusEl) { statusEl.textContent = `Error: ${err.detail || 'Failed to create instance'}`; statusEl.style.display = 'block'; }
+            if (statusEl) { statusEl.textContent = tr('gui.common.error', 'Error: {error}', { error: err.detail || tr('gui.system.instance_create_failed', 'Failed to create instance') }); statusEl.style.display = 'block'; }
         }
         if (btn) btn.disabled = false;
     });
@@ -4936,7 +5034,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const host = hostEl?.value.trim() || 'localhost';
         const port = parseInt(portEl?.value, 10);
         if (!port || port < 1 || port > 65535) {
-            if (statusEl) { statusEl.textContent = 'Enter a valid port.'; statusEl.style.display = 'block'; }
+            if (statusEl) { statusEl.textContent = tr('gui.system.invalid_port', 'Enter a valid port.'); statusEl.style.display = 'block'; }
             return;
         }
         if (btn) btn.disabled = true;
@@ -4948,11 +5046,11 @@ document.addEventListener('DOMContentLoaded', () => {
         if (res.ok) {
             if (portEl) portEl.value = '';
             if (labelEl) labelEl.value = '';
-            if (statusEl) { statusEl.textContent = 'Instance registered! Reloading...'; statusEl.style.display = 'block'; }
+            if (statusEl) { statusEl.textContent = tr('gui.system.instance_registered', 'Instance registered! Reloading...'); statusEl.style.display = 'block'; }
             setTimeout(() => { loadInstanceTabs(); loadInstances(); if (statusEl) statusEl.style.display = 'none'; }, 1000);
         } else {
             const err = await res.json().catch(() => ({}));
-            if (statusEl) { statusEl.textContent = `Error: ${err.detail || 'Failed to register instance'}`; statusEl.style.display = 'block'; }
+            if (statusEl) { statusEl.textContent = tr('gui.common.error', 'Error: {error}', { error: err.detail || tr('gui.system.instance_register_failed', 'Failed to register instance') }); statusEl.style.display = 'block'; }
         }
         if (btn) btn.disabled = false;
     });
@@ -4962,15 +5060,15 @@ document.addEventListener('DOMContentLoaded', () => {
         const labelInput = document.getElementById('new-account-label');
         const statusEl = document.getElementById('accounts-status');
         const label = labelInput?.value.trim();
-        if (!label) { alert('Enter a label first.'); return; }
+        if (!label) { alert(tr('gui.system.enter_label', 'Enter a label first.')); return; }
         try {
             const r = await fetch(API_BASE + '/api/accounts/add', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({label}) });
             if (!r.ok) { const d = await r.json().catch(() => ({})); alert(d.detail || 'Error'); return; }
             if (labelInput) labelInput.value = '';
-            if (statusEl) { statusEl.textContent = `Account "${label}" added, miner restarting for login...`; statusEl.style.display = 'block'; statusEl.style.color = '#1DA980'; }
+            if (statusEl) { statusEl.textContent = tr('gui.system.account_added', 'Account "{label}" added, miner restarting for login...', { label }); statusEl.style.display = 'block'; statusEl.style.color = '#1DA980'; }
             setTimeout(loadAccounts, 1500);
         } catch (e) {
-            alert('Error: ' + e.message);
+            alert(tr('gui.common.error', 'Error: {error}', { error: e.message }));
         }
     });
 

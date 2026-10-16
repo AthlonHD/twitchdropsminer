@@ -151,11 +151,11 @@ class SettingsManager:
         self.check_and_update_setting(
             "discord_webhook_mentions", settings_data.get("discord_webhook_mentions")
         )
-        self.check_and_update_setting(
-            "drop_name_blacklist", settings_data.get("drop_name_blacklist")
+        should_trigger_update |= self.check_and_update_setting(
+            "drop_name_blacklist", settings_data.get("drop_name_blacklist"), True
         )
-        self.check_and_update_setting(
-            "blacklisted_drop_ids", settings_data.get("blacklisted_drop_ids")
+        should_trigger_update |= self.check_and_update_setting(
+            "blacklisted_drop_ids", settings_data.get("blacklisted_drop_ids"), True
         )
         should_trigger_update |= self.check_and_update_setting(
             "ignored_campaign_ids", settings_data.get("ignored_campaign_ids"), True

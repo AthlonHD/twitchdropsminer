@@ -24,6 +24,17 @@
       "logging_in": "Anmelden...",
       "required": "Anmeldung erforderlich",
       "waiting_auth": "Warte auf Authentifizierung..."
+    },
+    "browser_login": {
+      "on_real_display": "Auf diesem Computer hat sich ein Browserfenster geöffnet -- melde dich dort bei Twitch an.",
+      "helper_intro": "TDM läuft auf einem Server, also meldest du dich von deinem eigenen PC aus an: führe dort diesen Befehl aus (braucht Python 3 und Google Chrome oder Edge). Ein normales Browserfenster öffnet sich -- bei Twitch einloggen, fertig.",
+      "helper_copy": "Kopieren",
+      "helper_copied": "Kopiert",
+      "helper_download": "Oder das Skript herunterladen",
+      "helper_py_hint": "Falls \"python\" nicht gefunden wird: unter Windows py, unter macOS/Linux python3 verwenden.",
+      "helper_intro_local": "Nicht an diesem Computer? Führe stattdessen diesen Befehl auf dem PC aus, an dem du sitzt (braucht Python 3 und Google Chrome oder Edge):",
+      "helper_copy_manual": "Markiert -- Strg+C drücken",
+      "helper_http_warning": "Dieses Dashboard ist unverschlüsselt (http) -- den Befehl nur im Heimnetz ausführen oder https verwenden."
     }
   },
   "error": {
@@ -87,7 +98,10 @@
       "campaign_progress": "Fortschritt:",
       "no_drop": "Kein aktiver Drop",
       "return_to_auto": "Zurück zum Auto-Modus",
-      "manual_mode_info": "Manueller Modus: Mining"
+      "manual_mode_info": "Manueller Modus: Mining",
+      "ignore_campaign": "Kampagne ignorieren",
+      "ignore_campaign_title": "Die ganze Kampagne ignorieren — keiner ihrer Drops wird mehr gefarmt oder abgeholt",
+      "ignore_campaign_confirm": "Kampagne \"{campaign}\" ignorieren? Keiner ihrer Drops wird mehr gefarmt oder abgeholt."
     },
     "channels": {
       "name": "Kanäle",
@@ -253,7 +267,7 @@
       "important_notes": "Wichtige Hinweise",
       "github_repo": "GitHub-Repository",
       "how_to_use_items": [
-        "Melden Sie sich mit Ihrem Twitch-Konto an (OAuth Geräte-Code-Flow)",
+        "Melden Sie sich mit Ihrem Twitch-Konto in einem normalen Browserfenster an",
         "Verknüpfen Sie Ihre Konten auf <a href=\"https://www.twitch.tv/drops/campaigns\" target=\"_blank\">twitch.tv/drops/campaigns</a>",
         "Der Miner wird automatisch Kampagnen entdecken und mit dem Sammeln beginnen",
         "Konfigurieren Sie Prioritäts-Spiele in den Einstellungen, um sich auf das zu konzentrieren, was Sie möchten",
@@ -442,6 +456,9 @@
       "pause_desc": "Miner pausieren / fortsetzen",
       "resume_label": "Fortsetzen",
       "resume_desc": "Klicken zum Fortsetzen"
+    },
+    "sidebar": {
+      "accounts": "Konten"
     }
   }
 }

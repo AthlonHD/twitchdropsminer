@@ -196,7 +196,32 @@ class GUISettingsGeneral(TypedDict):
     dark_mode: str
 
 
-class GUISettings(TypedDict):
+class GUISettingsOptional(TypedDict, total=False):
+    """Newer keys: a language file may omit them; the dashboard then shows the
+    English text it carries as the fallback."""
+    auto_add_linked: str
+    auto_prioritize: str
+    blacklist_ids_placeholder: str
+    blacklist_placeholder: str
+    blacklisted_games_placeholder: str
+    campaign_end_notification: str
+    categories: dict[str, str]
+    idle_parallel: str
+    idle_parallel_help: str
+    password_repeat_placeholder: str
+    predictions: dict[str, str]
+    preferred_games: str
+    preferred_games_help: str
+    proxy_empty: str
+    proxy_verifying: str
+    push_blocked: str
+    select_badge_emote: str
+    set_proxy_title: str
+    verify_proxy_title: str
+    webhook_missing: str
+
+
+class GUISettings(GUISettingsOptional):
     general: GUISettingsGeneral
     mining_benefits: str
     mining_benefits_help: str

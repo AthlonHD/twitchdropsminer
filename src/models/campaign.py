@@ -160,7 +160,7 @@ class DropsCampaign:
     @property
     def first_drop(self) -> TimedDrop | None:
         drops: list[TimedDrop] = sorted(
-            (drop for drop in self.drops if drop.can_earn()),
+            (drop for drop in self.drops if drop.can_earn() and not drop.excluded),
             key=lambda d: d.remaining_minutes,
         )
         return drops[0] if drops else None

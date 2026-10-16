@@ -203,7 +203,7 @@
       "about_text": "Bu uygulama, yayın verilerini indirmeden süreye bağlı Twitch drop'larını otomatik olarak kazanır.",
       "how_to_use": "Nasıl Kullanılır",
       "how_to_use_items": [
-        "Twitch hesabınızı kullanarak giriş yapın (OAuth cihaz kodu akışı)",
+        "Twitch hesabınızla normal bir tarayıcı penceresinde giriş yapın",
         "Hesaplarınızı <a href=\"https://www.twitch.tv/drops/campaigns\" target=\"_blank\">twitch.tv/drops/campaigns</a> adresinden bağlayın",
         "Miner kampanyaları otomatik olarak bulur ve drop kazanmaya başlar",
         "İstediğiniz oyunlara odaklanmak için Ayarlar bölümünden öncelikli oyunları yapılandırın",
