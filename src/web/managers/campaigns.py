@@ -35,6 +35,9 @@ class CampaignProgressManager:
         self._current_drop = drop
         self._remaining_seconds = remaining_seconds
         self._last_update = time.monotonic()
+        if drop is not None and drop.excluded:
+            # blacklisted / ignored drop: Twitch may still credit it, but it is not "the drop we mine"
+            return
         if drop:
             asyncio.create_task(
                 self._broadcaster.emit(

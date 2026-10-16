@@ -200,7 +200,11 @@ class InventoryService:
                 await self._twitch.get_session(), self._twitch.settings.proxy
             )
             public_records = {c["id"]: c for c in public}
-            available_campaigns = dict(public_records)
+            # Ids only: the feed's records are shaped differently from
+            # CampaignDetails (e.g. allow.channels [] vs null), and merging the
+            # two raised "Inconsistent merge data". The details are the truth;
+            # the feed records are only used below for campaigns without any.
+            available_campaigns = {cid: {} for cid in public_records}
             if not available_campaigns and not inventory_data:
                 raise
 
