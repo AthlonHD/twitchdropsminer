@@ -28,6 +28,10 @@ from src.auth import browser_login
 from src.web.diagnostics_api import DiagnosticsAPI
 
 import os as _os
+import os as _os_ck
+# one cookie name per port: browsers share cookies across ports of the same host, so instances on :8080/:8082 would overwrite each other
+_SESSION_COOKIE = "__tdm_session" + (("_" + _os_ck.environ["TDM_PORT"]) if _os_ck.environ.get("TDM_PORT", "").strip() else "")
+
 _DATA_DIR = Path(_os.environ.get("TDM_DATA_DIR", str(Path(__file__).parent.parent.parent / "data")))
 _WEB_CONFIG_FILE = _DATA_DIR / "web_config.json"
 _BOT_TOKEN_FILE = _DATA_DIR / "discord_bot_token.json"
@@ -459,7 +463,7 @@ class PasswordAuthMiddleware(BaseHTTPMiddleware):
         fleet_pw_header = request.headers.get("X-Fleet-Password", "")
         if fleet_pw_header and secrets.compare_digest(fleet_pw_header, pw):
             return await call_next(request)
-        session = request.cookies.get("__tdm_session", "")
+        session = request.cookies.get(_SESSION_COOKIE, "")
         if _session_valid(session):
             return await call_next(request)
         return HTMLResponse(_login_html(), status_code=401)
@@ -639,7 +643,7 @@ async def setup_post(request: Request):
             return HTMLResponse(_setup_html(f'<p class="err">{_web_auth_strings()["error_password_mismatch"]}</p>'))
         _save_web_config({**_load_web_config(), "setup_done": True, "password": pw})
         resp = RedirectResponse("/", status_code=303)
-        resp.set_cookie("__tdm_session", _new_session_token(), httponly=True, samesite="lax", max_age=_SESSION_MAX_AGE_SECONDS)
+        resp.set_cookie(_SESSION_COOKIE, _new_session_token(), httponly=True, samesite="lax", max_age=_SESSION_MAX_AGE_SECONDS)
         return resp
     else:
         _save_web_config({**_load_web_config(), "setup_done": True, "password": ""})
@@ -680,16 +684,16 @@ async def auth_login_post(request: Request):
     current_pw = _get_password()
     if current_pw and secrets.compare_digest(pw, current_pw):
         resp = RedirectResponse("/", status_code=303)
-        resp.set_cookie("__tdm_session", _new_session_token(), httponly=True, samesite="lax", max_age=_SESSION_MAX_AGE_SECONDS)
+        resp.set_cookie(_SESSION_COOKIE, _new_session_token(), httponly=True, samesite="lax", max_age=_SESSION_MAX_AGE_SECONDS)
         return resp
     return HTMLResponse(_login_html(f'<p class="err">{_web_auth_strings()["wrong_password"]}</p>'), status_code=401)
 
 
 @app.get("/__auth_logout")
 async def auth_logout(request: Request):
-    _revoke_session(request.cookies.get("__tdm_session", ""))
+    _revoke_session(request.cookies.get(_SESSION_COOKIE, ""))
     resp = RedirectResponse("/__auth_login_page", status_code=303)
-    resp.delete_cookie("__tdm_session")
+    resp.delete_cookie(_SESSION_COOKIE)
     return resp
 
 
@@ -1546,9 +1550,9 @@ async def change_password(data: PasswordChangeRequest, request: Request):
     from fastapi.responses import JSONResponse
     response = JSONResponse(resp_data)
     if data.new_password:
-        response.set_cookie("__tdm_session", _new_session_token(), httponly=True, samesite="lax", max_age=_SESSION_MAX_AGE_SECONDS)
+        response.set_cookie(_SESSION_COOKIE, _new_session_token(), httponly=True, samesite="lax", max_age=_SESSION_MAX_AGE_SECONDS)
     else:
-        response.delete_cookie("__tdm_session")
+        response.delete_cookie(_SESSION_COOKIE)
     return response
 
 
@@ -1563,7 +1567,7 @@ async def disable_password(data: PasswordDisableRequest):
     _save_web_config(cfg)
     from fastapi.responses import JSONResponse
     response = JSONResponse({"success": True})
-    response.delete_cookie("__tdm_session")
+    response.delete_cookie(_SESSION_COOKIE)
     return response
 
 

@@ -1232,6 +1232,14 @@ function updateDropProgress(data) {
     const campData = data.campaign_id && state.campaigns
         ? Object.values(state.campaigns).find(c => c.id === data.campaign_id || c.campaign_id === data.campaign_id)
         : null;
+    // Campaigns can hold several drops with the same name (Hearthstone: three
+    // "Standard Pack"s) -- tell them apart, or blocking one looks like a no-op.
+    const sameName = (campData?.drops || []).filter(d => d.name === data.drop_name).length > 1;
+    document.getElementById('drop-name').textContent = sameName
+        ? `${data.drop_name} (${data.required_minutes} min)`
+        : data.drop_name;
+    const ignoreBtn = document.getElementById('ignore-campaign-btn');
+    if (ignoreBtn) ignoreBtn.style.display = data.campaign_id ? '' : 'none';
     let dropsLeftEl = document.getElementById('progress-drops-left');
     if (!dropsLeftEl) {
         dropsLeftEl = makeElement('div', { id: 'progress-drops-left', class: 'progress-drops-left' });
@@ -1242,7 +1250,7 @@ function updateDropProgress(data) {
         // hit 100% locally isn't "left" even if Twitch hasn't confirmed the claim yet —
         // exclude both so this doesn't show as stuck forever.
         const unclaimed = campData.drops.filter(d => !d.is_claimed && (d.required_subs || 0) <= 0
-            && (d.current_minutes || 0) < (d.required_minutes || 0));
+            && (d.current_minutes || 0) < (d.required_minutes || 0) && !isDropBlocked(d));
         // Drops in the same campaign share one watch-minutes clock and progress
         // in parallel (current_minutes ticks up for all of them at once) — the
         // campaign finishes when its slowest drop does, so remaining time is the
@@ -2375,6 +2383,20 @@ function addGameToBlacklist(gameName) {
     setAutoAddExcluded(name, true);
     renderBlacklistedGames([...state.settings.auto_add_excluded_games]);
     saveSettings();
+}
+
+function isDropBlocked(drop) {
+    const name = (drop.name || '').toLowerCase();
+    return (state.settings.blacklisted_drop_ids || []).includes(drop.id)
+        || (state.settings.drop_name_blacklist || []).some(kw => kw.trim() && name.includes(kw.trim().toLowerCase()));
+}
+
+function ignoreCurrentCampaign() {
+    const drop = state.currentDrop;
+    if (!drop || !drop.campaign_id) return;
+    if ((state.settings.ignored_campaign_ids || []).includes(drop.campaign_id)) return;
+    if (!confirm(tr('gui.progress.ignore_campaign_confirm', 'Ignore the campaign "{campaign}"? None of its drops will be mined or claimed anymore.', { campaign: drop.campaign_name }))) return;
+    toggleIgnoreCampaign(drop.campaign_id);
 }
 
 function blacklistCurrentDrop() {
@@ -4465,6 +4487,12 @@ function switchTab(tabName) {
 
 // ==================== Event Listeners ====================
 
+function instBase(inst) {
+    // base_url ":8082" = same host the page was opened on (LAN / Tailscale / localhost), other port
+    if (!inst.base_url) return '';
+    return inst.base_url.startsWith(':') ? `${location.protocol}//${location.hostname}${inst.base_url}` : inst.base_url;
+}
+
 function switchAccount(inst) {
     // Manually-registered instances (arbitrary host/port, no reverse-proxy path
     // set up for them) are switched to by navigating straight to their own
@@ -4472,7 +4500,7 @@ function switchAccount(inst) {
     const num = typeof inst === 'object' ? inst.n : inst;
     if (num === ACC_NUM) return;
     if (typeof inst === 'object' && inst.base_url) {
-        location.href = inst.base_url;
+        location.href = instBase(inst);
         return;
     }
     const url = new URL(location.href);
@@ -4517,7 +4545,7 @@ async function loadInstanceTabs() {
             container.appendChild(btn);
             // fetch login name for this instance
             const apiPath = inst.base_url
-                ? `${inst.base_url}/api/instance`
+                ? `${instBase(inst)}/api/instance`
                 : (inst.n > 1 ? `/acc${inst.n}/api/instance` : '/api/instance');
             fetch(apiPath).then(r => r.json()).then(d => {
                 if (d.login) _accLogins[inst.n] = d.login;
