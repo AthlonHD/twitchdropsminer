@@ -142,9 +142,9 @@ class SettingsManager:
         self.check_and_update_setting("scheduler_enabled", settings_data.get("scheduler_enabled"))
         self.check_and_update_setting("scheduler_start", settings_data.get("scheduler_start"))
         self.check_and_update_setting("scheduler_stop", settings_data.get("scheduler_stop"))
-        if any(k in settings_data for k in ("scheduler_enabled", "scheduler_start", "scheduler_stop")):
-            if self._on_scheduler_change:
-                self._on_scheduler_change()
+        scheduler_keys = ("scheduler_enabled", "scheduler_start", "scheduler_stop")
+        if self._on_scheduler_change and any(k in settings_data for k in scheduler_keys):
+            self._on_scheduler_change()
         self.check_and_update_setting(
             "discord_webhook_drops", settings_data.get("discord_webhook_drops")
         )
@@ -153,6 +153,9 @@ class SettingsManager:
         )
         self.check_and_update_setting(
             "discord_webhook_mentions", settings_data.get("discord_webhook_mentions")
+        )
+        self.check_and_update_setting(
+            "discord_webhook_health", settings_data.get("discord_webhook_health")
         )
         should_trigger_update |= self.check_and_update_setting(
             "drop_name_blacklist", settings_data.get("drop_name_blacklist"), True

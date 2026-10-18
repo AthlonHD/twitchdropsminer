@@ -14,6 +14,7 @@ from yarl import URL
 
 from src.config import JsonType
 
+
 logger = logging.getLogger("TwitchDrops")
 
 

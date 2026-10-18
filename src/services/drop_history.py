@@ -10,6 +10,7 @@ from typing import TYPE_CHECKING
 
 from src.config.paths import DATA_DIR
 
+
 if TYPE_CHECKING:
     from src.core.client import Twitch
     from src.models.campaign import DropsCampaign
@@ -69,7 +70,7 @@ def save_drop_claim(game_name: str, drop_name: str, reward_text: str, image_url:
         logger.warning(f"Failed to update drops total counter: {e}")
 
 
-def finalize_drop_claim(twitch: "Twitch", campaign: "DropsCampaign", drop: "TimedDrop") -> None:
+def finalize_drop_claim(twitch: Twitch, campaign: DropsCampaign, drop: TimedDrop) -> None:
     """Records a claimed drop exactly once, regardless of which of the three
     code paths (local progress-complete detection, websocket drop-claim
     confirmation, periodic inventory reconciliation) observed the claim.

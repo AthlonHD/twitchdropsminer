@@ -1387,6 +1387,7 @@ body.dark-mode .tab-button.active { color: var(--glitch-glow); }
 }
 .campaign-status-info { display: flex; align-items: center; gap: 10px; min-width: 0; }
 .campaign-status-text { color: var(--ink-dim); font-size: 0.75rem; white-space: nowrap; }
+.campaign-tag-sub { color: var(--ink-dim); font-size: 0.7rem; padding: 1px 6px; border: 1px solid var(--ink-dim); border-radius: var(--r-sm); white-space: nowrap; }
 .campaign-claimed-count { color: var(--ink-dim); font-size: 0.75rem; white-space: nowrap; font-family: var(--font-mono); }
 .campaign-status-btns { display: flex; align-items: center; gap: 6px; flex-shrink: 0; }
 
@@ -1490,6 +1491,17 @@ body.dark-mode .tab-button.active { color: var(--glitch-glow); }
     text-align: center;
     flex-shrink: 0;
     font-family: var(--font-mono);
+}
+
+.wq-tag-fallback {
+    margin-left: 6px;
+    padding: 1px 6px;
+    border-radius: var(--r-sm);
+    border: 1px solid var(--ore);
+    color: var(--ore);
+    font-size: 0.65rem;
+    font-weight: 600;
+    vertical-align: middle;
 }
 
 .wq-icon { width: 28px; height: 37px; object-fit: cover; border-radius: var(--r-sm); flex-shrink: 0; box-shadow: 0 1px 4px rgba(0,0,0,0.35); }

@@ -15,7 +15,7 @@ from typing import TYPE_CHECKING, Any
 from dateutil.parser import isoparse
 
 from src.api import GQLClient
-from src.config import GQL_OPERATIONS, ClientType
+from src.config import GQL_OPERATIONS
 from src.exceptions import ExitRequest, GQLException
 from src.i18n import _
 from src.models import DropsCampaign

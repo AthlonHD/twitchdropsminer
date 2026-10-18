@@ -1,14 +1,13 @@
 from __future__ import annotations
 
 import asyncio
-import json
 import logging
 import re
 from base64 import b64encode
 from collections import OrderedDict
 from datetime import timezone
 from time import monotonic, time
-from typing import TYPE_CHECKING, Any, SupportsInt, cast
+from typing import TYPE_CHECKING, Any, SupportsInt
 
 import aiohttp
 from dateutil.parser import isoparse

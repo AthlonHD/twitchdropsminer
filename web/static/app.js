@@ -417,6 +417,20 @@ socket.on('campaign_end_alert', (campaigns) => {
     }
 });
 
+socket.on('health_alert', (data) => {
+    const pushToggle = document.getElementById('push-enabled-toggle');
+    if (!pushToggle?.checked) return;
+    if (!('Notification' in window) || Notification.permission !== 'granted') return;
+    const key = `gui.health.${data.issue}${data.resolved ? '_resolved' : ''}`;
+    const fallback = {
+        login: '⚠️ Twitch login is waiting',
+        login_resolved: '✅ Twitch login completed',
+        stall: '⚠️ Mining stalled — no watch for 15+ minutes',
+        stall_resolved: '✅ Mining is running again',
+    }[`${data.issue}${data.resolved ? '_resolved' : ''}`] || data.issue;
+    new Notification(tr(key, fallback), { body: data.label });
+});
+
 socket.on('attention_required', (data) => {
     if (data.sound) {
         // Play notification sound
@@ -1854,6 +1868,12 @@ function renderInventory() {
             const infoGroup = makeElement('div', { class: 'campaign-status-info' });
             infoGroup.appendChild(makeElement('span', { class: 'campaign-status-text' }, statusText));
             infoGroup.appendChild(makeElement('span', { class: 'campaign-claimed-count' }, `${campaign.claimed_drops} / ${campaign.total_drops} ${claimedCountText}`));
+            if (campaign.subscription_required) {
+                infoGroup.appendChild(makeElement('span', {
+                    class: 'campaign-tag-sub',
+                    title: tr('gui.inventory.sub_only_title', "Needs a channel subscription — can't be earned by watching"),
+                }, tr('gui.inventory.sub_only', '🔒 Sub only')));
+            }
             el.appendChild(infoGroup);
             const btnGroup = makeElement('div', { class: 'campaign-status-btns' });
             btnGroup.appendChild(farmToggle);
@@ -2121,6 +2141,8 @@ function updateSettingsUI(settings) {
     if (webhookDropsEl) webhookDropsEl.value = settings.discord_webhook_drops || '';
     const webhookPointsEl = document.getElementById('discord-webhook-points');
     if (webhookPointsEl) webhookPointsEl.value = settings.discord_webhook_points || '';
+    const webhookHealthEl = document.getElementById('discord-webhook-health');
+    if (webhookHealthEl) webhookHealthEl.value = settings.discord_webhook_health || '';
     const blacklistEl = document.getElementById('drop-blacklist-input');
     if (blacklistEl) blacklistEl.value = (settings.drop_name_blacklist || []).join(', ');
     renderBlacklistedDropIds(settings.blacklisted_drop_ids || []);
@@ -2215,6 +2237,11 @@ async function loadBotChannelConfig() {
         if (pointsEl) pointsEl.textContent = pointsStr || '—';
         if (dropsClear) dropsClear.style.display = dropsStr ? 'inline-block' : 'none';
         if (pointsClear) pointsClear.style.display = pointsStr ? 'inline-block' : 'none';
+        const healthStr = fmtChannels(channels.health);
+        const healthEl = document.getElementById('bot-health-channel');
+        const healthClear = document.getElementById('bot-health-clear-btn');
+        if (healthEl) healthEl.textContent = healthStr || '—';
+        if (healthClear) healthClear.style.display = healthStr ? 'inline-block' : 'none';
     } catch (e) {}
 }
 
@@ -3236,6 +3263,7 @@ async function _saveSettingsNow() {
         },
         discord_webhook_drops: document.getElementById('discord-webhook-drops')?.value || '',
         discord_webhook_points: document.getElementById('discord-webhook-points')?.value || '',
+        discord_webhook_health: document.getElementById('discord-webhook-health')?.value || '',
         claim_channel_points: document.getElementById('claim-channel-points')?.checked ?? true,
         idle_channels: state.settings.idle_channels || [],
         idle_use_followed: document.getElementById('idle-use-followed')?.checked ?? false,
@@ -3341,7 +3369,7 @@ async function togglePause() {
 }
 
 async function testWebhook(type) {
-    const id = type === 'drops' ? 'discord-webhook-drops' : 'discord-webhook-points';
+    const id = `discord-webhook-${type}`;
     const url = document.getElementById(id)?.value.trim();
     if (!url) { alert(tr('gui.settings.webhook_missing', 'No webhook URL set.')); return; }
     try {
@@ -4729,6 +4757,7 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('discord-webhook-drops')?.addEventListener('blur', saveSettings);
     document.getElementById('drop-blacklist-input')?.addEventListener('change', saveSettings);
     document.getElementById('discord-webhook-points')?.addEventListener('blur', saveSettings);
+    document.getElementById('discord-webhook-health')?.addEventListener('blur', saveSettings);
     document.getElementById('claim-channel-points')?.addEventListener('change', saveSettings);
 
     document.getElementById('push-enabled-toggle')?.addEventListener('change', async function() {
@@ -5144,6 +5173,9 @@ function renderWantedItems(tree) {
             el.appendChild(nameEl);
             if (campaignPreview) el.appendChild(subtitleEl);
         });
+        if (gameGroup.fallback) {
+            nameEl.appendChild(makeElement('span', { class: 'wq-tag-fallback' }, tr('gui.wanted.fallback', 'Fallback')));
+        }
 
         // Drop count
         const countEl = makeElement('span', { class: 'wq-count' }, `${totalDrops} drop${totalDrops !== 1 ? 's' : ''}`);
@@ -5171,7 +5203,9 @@ function renderWantedItems(tree) {
             // Re-sort and re-render the wanted queue immediately
             if (_wantedTree && _wantedTree.length > 0) {
                 const order = state.settings.games_to_watch;
-                _wantedTree.sort((a, b) => order.indexOf(a.game_name) - order.indexOf(b.game_name));
+                // Games outside the list (preferred, fallback) keep their place after it.
+                const rank = g => { const i = order.indexOf(g.game_name); return i < 0 ? Infinity : i; };
+                _wantedTree.sort((a, b) => rank(a) - rank(b) || 0);
                 renderWantedItems([..._wantedTree]);
             }
         };
@@ -5188,9 +5222,15 @@ function renderWantedItems(tree) {
             renderGamesToWatch();
         });
 
+        // Fallback games aren't on the watch list, so there is nothing to move or remove.
+        if (gameGroup.fallback) row.draggable = false;
+        const headerParts = gameGroup.fallback
+            ? [iconEl, badge, nameColEl, countEl, toggleEl]
+            : [handle, badge, iconEl, nameColEl, countEl, moveUpEl, moveDownEl, toggleEl, removeEl];
+
         // Header row click → toggle expand
         const headerEl = makeElement('div', { class: 'wq-header' }, '', el => {
-            [handle, badge, iconEl, nameColEl, countEl, moveUpEl, moveDownEl, toggleEl, removeEl].forEach(c => el.appendChild(c));
+            headerParts.forEach(c => el.appendChild(c));
         });
 
         // Expanded content
@@ -5331,6 +5371,11 @@ function showCampaignDropsModal(campaignId, onlyRemaining) {
                 badge.style.background = 'rgba(255,203,97,0.18)';
                 badge.style.color = '#C8850A';
                 badge.textContent = cm.badge_claim_now || '⚡ Claim now';
+            } else if ((drop.required_subs || 0) > 0) {
+                badge.style.background = 'rgba(160,160,180,0.18)';
+                badge.style.color = 'var(--ink-dim)';
+                badge.textContent = cm.badge_sub_only || '🔒 Sub only';
+                badge.title = tr('gui.inventory.sub_only_title', "Needs a channel subscription — can't be earned by watching");
             } else {
                 const pct = drop.required_minutes > 0 ? Math.round((effectiveMinutes / drop.required_minutes) * 100) : 0;
                 const minsLeft = Math.max(0, drop.required_minutes - effectiveMinutes);

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os as _os
 from pathlib import Path
 from typing import Any
 
@@ -36,7 +37,8 @@ def _merge_vars(base_vars: dict[str, Any], vars: dict[str, Any]) -> None:
 
 
 # Base Paths - environment-specific resolution
-import os as _os
+
+
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 _data_dir_env = _os.environ.get("TDM_DATA_DIR")
 DATA_DIR = Path(_data_dir_env) if _data_dir_env else PROJECT_ROOT / "data"

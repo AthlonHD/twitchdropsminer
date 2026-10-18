@@ -2,9 +2,11 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import logging
 from datetime import datetime, time
 from typing import TYPE_CHECKING
+
 
 if TYPE_CHECKING:
     from src.core.client import Twitch
@@ -49,7 +51,5 @@ class SchedulerService:
                     logger.info("Scheduler: resuming mining (entering active window)")
                     self._twitch.resume()
             self._trigger.clear()
-            try:
+            with contextlib.suppress(asyncio.TimeoutError):
                 await asyncio.wait_for(self._trigger.wait(), timeout=60)
-            except asyncio.TimeoutError:
-                pass

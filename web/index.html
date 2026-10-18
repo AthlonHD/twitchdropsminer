@@ -13,7 +13,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=IBM+Plex+Sans:ital,wght@0,400;0,500;0,600;0,700;1,400&family=IBM+Plex+Mono:wght@400;500;600;700&display=swap">
-    <link rel="stylesheet" href="/static/styles.css?v=saas20261014e">
+    <link rel="stylesheet" href="/static/styles.css?v=20261018a">
     <script src="https://cdn.socket.io/4.5.4/socket.io.min.js"></script>
 </head>
 
@@ -256,9 +256,9 @@
                             <span>Finished</span>
                         </label>
                         <input type="checkbox" id="filter-upcoming" style="display:none" />
-                        <label class="filter-checkbox" title="Show drops that require a Twitch subscription" data-i18n-title="gui.inventory.filters.sub_drops_title">
+                        <label class="filter-checkbox" title="Also show campaigns whose drops need a Twitch subscription (they can't be earned by watching)" data-i18n-title="gui.inventory.filters.sub_drops_title">
                             <input type="checkbox" id="filter-sub-drops" />
-                            <span data-i18n="gui.inventory.filters.sub_drops">Sub Drops</span>
+                            <span data-i18n="gui.inventory.filters.sub_drops">Show sub drops</span>
                         </label>
                         <div class="filter-separator"
                             style="width: 1px; height: 24px; background: var(--border-color); margin: 0 10px;">
@@ -469,7 +469,15 @@
                                 <button id="test-points-webhook-btn" class="secondary-btn" onclick="testWebhook('points')" style="white-space:nowrap;">Test</button>
                             </div>
                         </label>
-                        <small class="help-text-inline" id="settings-points-webhook-help">Fires when a bonus channel point chest is claimed.</small>
+                        <small class="help-text-inline" id="settings-points-webhook-help" style="margin-bottom:10px;display:block;">Fires when a bonus channel point chest is claimed.</small>
+                        <label>
+                            <span id="settings-health-webhook-label" data-i18n="gui.settings.discord_health_webhook_label">Health Alert Webhook:</span>
+                            <div style="display:flex;gap:8px;">
+                                <input type="text" id="discord-webhook-health" placeholder="https://discord.com/api/webhooks/..." style="flex:1;">
+                                <button id="test-health-webhook-btn" class="secondary-btn" onclick="testWebhook('health')" style="white-space:nowrap;">Test</button>
+                            </div>
+                        </label>
+                        <small class="help-text-inline" id="settings-health-webhook-help" data-i18n="gui.settings.discord_health_webhook_help">Fires when the Twitch login has been waiting for 30+ minutes or mining stalls, and again when it recovers. Empty: uses the drop webhook.</small>
                     </section>
 
                     <section class="settings-section">
@@ -496,6 +504,13 @@
                                         <span id="bot-points-channel" style="font-family:monospace;font-size:.82rem;">—</span>
                                     </div>
                                     <button id="bot-points-clear-btn" class="secondary-btn" style="display:none;font-size:.75rem;padding:2px 8px;color:#eb4a4a;border-color:#eb4a4a;" onclick="botClearChannel('points')" data-i18n="gui.common.clear">Clear</button>
+                                </div>
+                                <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;">
+                                    <div>
+                                        <span style="font-size:.82rem;color:#adadb8;" data-i18n="gui.settings.discord_bot.health_label">🩺 Health: </span>
+                                        <span id="bot-health-channel" style="font-family:monospace;font-size:.82rem;">—</span>
+                                    </div>
+                                    <button id="bot-health-clear-btn" class="secondary-btn" style="display:none;font-size:.75rem;padding:2px 8px;color:#eb4a4a;border-color:#eb4a4a;" onclick="botClearChannel('health')" data-i18n="gui.common.clear">Clear</button>
                                 </div>
                             </div>
                             <p id="settings-bot-setchannel-hint" style="font-size:.75rem;color:#6b6b7b;margin:8px 0 0;">Use <code>/setchannel</code> in Discord to set channels.</p>
@@ -1417,7 +1432,7 @@ TDM_PORT=8080 WEB_PASSWORD=mysecretpassword pm2 start main.py --name twitchdrops
     </div>
 
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js" integrity="sha384-e6nUZLBkQ86NJ6TVVKAeSaK8jWa3NhkYWZFomE39AvDbQWeie9PlQqM3pmYW5d1g" crossorigin="anonymous"></script>
-    <script src="/static/app.js?v=saas20261014e"></script>
+    <script src="/static/app.js?v=20261018a"></script>
 </body>
 
 </html>

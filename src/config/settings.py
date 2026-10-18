@@ -74,6 +74,7 @@ default_settings = {
     "claim_moments": True,
     "irc_chat_presence": True,
     "discord_webhook_mentions": "",
+    "discord_webhook_health": "",
     "irc_mention_notify": True,
     "make_predictions": False,
     "bet_strategy": "SMART",
@@ -120,6 +121,7 @@ class Settings:
     claim_moments: bool
     irc_chat_presence: bool
     discord_webhook_mentions: str
+    discord_webhook_health: str
     irc_mention_notify: bool
     make_predictions: bool
     bet_strategy: str

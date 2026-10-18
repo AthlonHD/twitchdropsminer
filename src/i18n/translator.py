@@ -134,7 +134,11 @@ class GUIBadges(TypedDict):
     proxy: GUIBadgeItem
 
 
-class GUIWanted(TypedDict):
+class GUIWantedOptional(TypedDict, total=False):
+    fallback: str
+
+
+class GUIWanted(GUIWantedOptional):
     name: str
     none: str
 
@@ -160,7 +164,12 @@ class GUIInvStatus(TypedDict):
     claimed: str
 
 
-class GUIInventory(TypedDict):
+class GUIInventoryOptional(TypedDict, total=False):
+    sub_only: str
+    sub_only_title: str
+
+
+class GUIInventory(GUIInventoryOptional):
     no_campaigns: str
     status: GUIInvStatus
     starts: str
@@ -212,6 +221,8 @@ class GUISettingsOptional(TypedDict, total=False):
     predictions: dict[str, str]
     preferred_games: str
     preferred_games_help: str
+    discord_health_webhook_label: str
+    discord_health_webhook_help: str
     priority_list_only: str
     priority_list_only_help: str
     proxy_empty: str
@@ -380,7 +391,11 @@ class GUIDropsToday(TypedDict):
     subtitle: str
 
 
-class GUICampaignModal(TypedDict):
+class GUICampaignModalOptional(TypedDict, total=False):
+    badge_sub_only: str
+
+
+class GUICampaignModal(GUICampaignModalOptional):
     subtitle_remaining: str
     subtitle_all: str
     empty_remaining: str
@@ -450,7 +465,18 @@ class GUIUpdateModal(TypedDict):
     error_contacting: str
 
 
-class GUIMessages(TypedDict):
+class GUIHealth(TypedDict):
+    login: str
+    login_resolved: str
+    stall: str
+    stall_resolved: str
+
+
+class GUIMessagesOptional(TypedDict, total=False):
+    health: GUIHealth
+
+
+class GUIMessages(GUIMessagesOptional):
     output: str
     status: GUIStatus
     tabs: GUITabs

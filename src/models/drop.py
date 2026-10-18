@@ -9,12 +9,12 @@ from typing import TYPE_CHECKING
 from dateutil.parser import isoparse
 
 from src.config.constants import MAX_EXTRA_MINUTES
-from src.services import drop_minutes_cache
-from src.services.drop_history import finalize_drop_claim
 from src.config.operations import GQL_OPERATIONS
 from src.exceptions import GQLException
 from src.i18n import _
 from src.models.benefit import Benefit
+from src.services import drop_minutes_cache
+from src.services.drop_history import finalize_drop_claim
 
 
 if TYPE_CHECKING:

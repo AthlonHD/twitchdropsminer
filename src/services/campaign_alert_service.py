@@ -3,10 +3,11 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import TYPE_CHECKING
 
 import aiohttp
+
 
 if TYPE_CHECKING:
     from src.core.client import Twitch

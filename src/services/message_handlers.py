@@ -8,18 +8,19 @@ drop claims, notifications, stream state changes, and broadcast updates.
 from __future__ import annotations
 
 import asyncio
+import contextlib
+import json as _json_mod
 import logging
 from datetime import datetime, timezone
 from typing import TYPE_CHECKING
 
 import aiohttp
 
-import json as _json_mod
-
 from src.config import CALL, DATA_DIR, GQL_OPERATIONS, State
 from src.i18n import _
 from src.services.drop_history import finalize_drop_claim
 from src.utils import json_load, json_save, task_wrapper
+
 
 _WEB_CONFIG_FILE = DATA_DIR / "web_config.json"
 
@@ -32,7 +33,7 @@ def _get_active_account() -> str:
         return ""
 
 
-def _get_points_file() -> "Path":
+def _get_points_file() -> Path:
     try:
         cfg = _json_mod.loads(_WEB_CONFIG_FILE.read_text()) if _WEB_CONFIG_FILE.exists() else {}
         account = cfg.get("active_account")
@@ -54,10 +55,8 @@ def _save_last_chest(channel_login: str, bonus: int) -> None:
     except Exception:
         data = {}
     data[channel_login] = {"bonus": bonus, "ts": datetime.now(timezone.utc).isoformat()}
-    try:
+    with contextlib.suppress(Exception):
         p.write_text(_json_mod.dumps(data, indent=2))
-    except Exception:
-        pass
 
 
 def _get_last_webhook_notified(channel_login: str) -> int:
@@ -78,13 +77,11 @@ def _set_last_webhook_notified(channel_login: str, balance: int) -> None:
     except Exception:
         data = {}
     data[channel_login] = balance
-    try:
+    with contextlib.suppress(Exception):
         p.write_text(_json_mod.dumps(data, indent=2))
-    except Exception:
-        pass
 
 
-def _get_streaks_file() -> "Path":
+def _get_streaks_file() -> Path:
     return _get_points_file().parent / "watch_streaks.json"
 
 
@@ -97,10 +94,8 @@ def _mark_streak_claimed(channel_login: str) -> None:
     except Exception:
         data = {}
     data[channel_login] = {"active": True, "last_claimed_date": date.today().isoformat()}
-    try:
+    with contextlib.suppress(Exception):
         p.write_text(_json_mod.dumps(data, indent=2))
-    except Exception:
-        pass
 
 
 def get_streak_state(channel_login: str) -> dict:
@@ -113,7 +108,7 @@ def get_streak_state(channel_login: str) -> dict:
         return {}
 
 
-def _update_daily_points_server(delta: int, data_dir: "Path") -> None:
+def _update_daily_points_server(delta: int, data_dir: Path) -> None:
     from datetime import datetime
     from zoneinfo import ZoneInfo
     today = datetime.now(ZoneInfo("Europe/Vienna")).strftime("%Y-%m-%d")
@@ -129,6 +124,8 @@ def _update_daily_points_server(delta: int, data_dir: "Path") -> None:
 
 
 if TYPE_CHECKING:
+    from pathlib import Path
+
     from src.config import JsonType
     from src.core.client import Twitch
     from src.models import TimedDrop
@@ -376,15 +373,14 @@ class MessageHandlerService:
         if not url:
             return
         try:
-            async with aiohttp.ClientSession() as session:
-                async with session.post(
-                    url, json=payload, timeout=aiohttp.ClientTimeout(total=10)
-                ) as response:
-                    if response.status >= 300:
-                        body = await response.text()
-                        logger.warning(
-                            f"Discord webhook rejected (status {response.status}): {body[:500]}"
-                        )
+            async with aiohttp.ClientSession() as session, session.post(
+                url, json=payload, timeout=aiohttp.ClientTimeout(total=10)
+            ) as response:
+                if response.status >= 300:
+                    body = await response.text()
+                    logger.warning(
+                        f"Discord webhook rejected (status {response.status}): {body[:500]}"
+                    )
         except Exception as e:
             logger.warning(f"Discord webhook failed: {e}")
 
@@ -428,10 +424,9 @@ class MessageHandlerService:
                 message.get("data", {}).get("claim", {}).get("point_earn_reason")
                 or message.get("data", {}).get("type", "")
             )
-            if reward_type in ("WATCH_STREAK", "watch-streak"):
-                if channel:
-                    _mark_streak_claimed(channel.name)
-                    logger.info(f"Watch streak claimed on {channel.name}")
+            if reward_type in ("WATCH_STREAK", "watch-streak") and channel:
+                _mark_streak_claimed(channel.name)
+                logger.info(f"Watch streak claimed on {channel.name}")
             # Send Discord webhook for WebSocket-path claim
             webhook_url = self._twitch.settings.discord_webhook_points
             if webhook_url and claimed_amount:
@@ -477,10 +472,8 @@ class MessageHandlerService:
             )
             data = resp.get("data") or {}
             cp = None
-            try:
+            with contextlib.suppress(KeyError, TypeError):
                 cp = data["community"]["channel"]["self"]["communityPoints"]
-            except (KeyError, TypeError):
-                pass
             cp_enabled = cp is not None
             cp = cp or {}
             points: int = cp.get("balance", 0)
@@ -508,10 +501,8 @@ class MessageHandlerService:
                         )
                         new_data = new_resp.get("data") or {}
                         new_cp = {}
-                        try:
+                        with contextlib.suppress(KeyError, TypeError):
                             new_cp = new_data["community"]["channel"]["self"]["communityPoints"]
-                        except (KeyError, TypeError):
-                            pass
                         new_points = new_cp.get("balance", points)
                         bonus_amount = max(0, new_points - points)
                         points = new_points

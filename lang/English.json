@@ -213,7 +213,8 @@
         "expires": "Expires in 10 min",
         "drops_label": "🎁 Drops: ",
         "points_label": "💰 Points: ",
-        "clear_confirm": "Clear the {type} notification channel?"
+        "clear_confirm": "Clear the {type} notification channel?",
+        "health_label": "🩺 Health: "
       },
       "notifications_header": "Notifications",
       "push_enabled": "Browser Push Notifications",
@@ -279,7 +280,9 @@
         "col_min_balance": "Min bal",
         "col_delay": "Delay(s)"
       },
-      "campaign_end_notification": "⏰ Campaign ending in ~{hours}h"
+      "campaign_end_notification": "⏰ Campaign ending in ~{hours}h",
+      "discord_health_webhook_label": "Health Alert Webhook:",
+      "discord_health_webhook_help": "Fires when the Twitch login has been waiting for 30+ minutes or mining stalls, and again when it recovers. Empty: uses the drop webhook."
     },
     "help": {
       "about": "About Twitch Drops Miner",
@@ -340,7 +343,8 @@
       "name": "Wanted Drops Queue",
       "none": "No wanted drops queued...",
       "waiting_for_campaign": "⭐ Waiting for Campaign",
-      "no_campaign": "No campaign"
+      "no_campaign": "No campaign",
+      "fallback": "Fallback"
     },
     "main_stats": {
       "drops_today": "Drops Today",
@@ -381,6 +385,8 @@
       "starts": "Starts: {time}",
       "ends": "Ends: {time}",
       "claimed_drops": "claimed",
+      "sub_only": "🔒 Sub only",
+      "sub_only_title": "Needs a channel subscription — can't be earned by watching",
       "filters": {
         "active": "Active",
         "not_linked": "Not Linked",
@@ -393,8 +399,8 @@
         "other": "Other",
         "clear": "Clear Filters",
         "search_placeholder": "Type to search games...",
-        "sub_drops": "Sub Drops",
-        "sub_drops_title": "Show drops that require a Twitch subscription",
+        "sub_drops": "Show sub drops",
+        "sub_drops_title": "Also show campaigns whose drops need a Twitch subscription (they can't be earned by watching)",
         "item_title": "Direct Entitlement (Game Item)",
         "unverified_links": "Mine unverified links",
         "unverified_links_title": "Also mine campaigns whose account-link state Twitch no longer reports. Only enable this for games you have actually linked.",
@@ -535,7 +541,8 @@
       "badge_earned": "✓ Earned",
       "badge_earned_title": "Watch time completed — waiting for Twitch to confirm",
       "badge_claim_now": "⚡ Claim now",
-      "badge_percent_left": "{pct}% · {mins}min left"
+      "badge_percent_left": "{pct}% · {mins}min left",
+      "badge_sub_only": "🔒 Sub only"
     },
     "accounts_manager": {
       "trigger_btn": "⚙ Manage Accounts",
@@ -618,6 +625,12 @@
     },
     "console": {
       "toggle_title": "Toggle log output"
+    },
+    "health": {
+      "login": "⚠️ Twitch login is waiting",
+      "login_resolved": "✅ Twitch login completed",
+      "stall": "⚠️ Mining stalled — no watch for 15+ minutes",
+      "stall_resolved": "✅ Mining is running again"
     }
   }
 }

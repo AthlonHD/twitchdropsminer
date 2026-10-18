@@ -281,7 +281,9 @@ class WatchService:
             started = monotonic()
             succeeded: bool = await channel.send_watch()
 
-            if not succeeded:
+            if succeeded:
+                self._twitch._health_monitor.record_watch_ok()
+            else:
                 logger.log(CALL, f"Watch requested failed for channel: {channel.name}")
 
             # A ten-second poll fits inside Twitch's rolling segment window.

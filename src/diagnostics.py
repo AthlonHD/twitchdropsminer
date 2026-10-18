@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import hashlib
 import hmac
 import json
@@ -191,11 +192,9 @@ class Diagnostics:
     def record(self, endpoint: str, response: Any = None, *, status: int | None = None,
                operation: str = "", body_bytes: int | None = None, outcome: str = "response") -> None:
         """Sanitize synchronously; raw payloads are never retained. Never raises."""
-        try:
+        with contextlib.suppress(Exception):
             self._record(endpoint, response, status=status, operation=operation,
                          body_bytes=body_bytes, outcome=outcome)
-        except Exception:
-            pass
 
     def _record(self, endpoint: str, response: Any = None, *, status: int | None = None,
                 operation: str = "", body_bytes: int | None = None, outcome: str = "response") -> None:
@@ -221,10 +220,8 @@ class Diagnostics:
 
     def record_http(self, method: str, url: Any, status: int, *, body: bytes | None = None,
                     payload: Any = None, operations: Any = None) -> None:
-        try:
+        with contextlib.suppress(Exception):
             self._record_http(method, url, status, body=body, payload=payload, operations=operations)
-        except Exception:
-            pass
 
     def _record_http(self, method: str, url: Any, status: int, *, body: bytes | None = None,
                      payload: Any = None, operations: Any = None) -> None:

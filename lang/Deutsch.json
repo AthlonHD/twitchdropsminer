@@ -8,7 +8,9 @@
     "goes_offline": "{channel} ist OFFLINE gegangen, wechseln...",
     "claimed_drop": "Drop abgeholt: {drop}",
     "no_channel": "Keine teilnehmenden Kanäle online. Warten auf Kanäle...",
-    "no_campaign": "Keine aktiven Kampagnen verfügbar. Warten auf neue Kampagne..."
+    "no_campaign": "Keine aktiven Kampagnen verfügbar. Warten auf neue Kampagne...",
+    "idle": "Leerlauf: {channels}",
+    "idle_watching": "Leerlauf-Zuschauen: {channel}"
   },
   "login": {
     "error_code": "Login-Fehlercode: {error_code}",
@@ -23,7 +25,10 @@
       "logged_out": "Abgemeldet",
       "logging_in": "Anmelden...",
       "required": "Anmeldung erforderlich",
-      "waiting_auth": "Warte auf Authentifizierung..."
+      "waiting_auth": "Warte auf Authentifizierung...",
+      "timed_out": "Anmeldung abgelaufen - neue Anmeldesitzung wird gestartet...",
+      "cancelled": "Anmeldung abgebrochen - neue Anmeldesitzung wird gestartet...",
+      "unavailable": "Anmelde-Browser konnte nicht starten - prüfen Sie, ob Chromium, Xvfb, x11vnc und websockify installiert sind. Neuer Versuch..."
     },
     "browser_login": {
       "on_real_display": "Auf diesem Computer hat sich ein Browserfenster geöffnet -- melde dich dort bei Twitch an.",
@@ -98,7 +103,15 @@
       "campaign_progress": "Fortschritt:",
       "no_drop": "Kein aktiver Drop",
       "return_to_auto": "Zurück zum Auto-Modus",
-      "manual_mode_info": "Manueller Modus: Mining"
+      "manual_mode_info": "Manueller Modus: Mining",
+      "blacklist_drop_title": "Diesen Drop sperren — dauerhaft ausschließen, andere Drops dieses Spiels werden weiter gemined",
+      "blacklist_drop_aria": "Diesen Drop sperren",
+      "blacklist_confirm": "\"{drop}\" dauerhaft sperren? Er wird ab sofort nicht mehr gemined, andere Drops dieses Spiels aber weiterhin.",
+      "already_blacklisted": "Bereits gesperrt",
+      "view_campaign_drops": "Drops der Kampagne anzeigen",
+      "minutes_progress": "{current} / {required} Minuten",
+      "time_remaining": "Verbleibende Zeit: {time}",
+      "view_remaining_drops": "Verbleibende Drops anzeigen"
     },
     "channels": {
       "name": "Kanäle",
@@ -109,7 +122,11 @@
       "no_channels_for_games": "Keine Kanäle für ausgewählte Spiele gefunden...",
       "channel_count": "Kanal",
       "channel_count_plural": "Kanäle",
-      "viewers": "Zuschauer"
+      "viewers": "Zuschauer",
+      "channel_count_few": "Kanäle",
+      "viewer_singular": "Zuschauer",
+      "viewers_few": "Zuschauer",
+      "offline_short": "Offline"
     },
     "inventory": {
       "status": {
@@ -133,7 +150,14 @@
         "emote": "Emote",
         "other": "Andere",
         "clear": "Filter löschen",
-        "search_placeholder": "Spiele suchen..."
+        "search_placeholder": "Spiele suchen...",
+        "sub_drops": "Abo-Drops einblenden",
+        "sub_drops_title": "Auch Kampagnen anzeigen, deren Drops ein Twitch-Abo erfordern (durch Zuschauen nicht verdienbar)",
+        "item_title": "Direkte Berechtigung (Spielgegenstand)",
+        "unverified_links": "Unbestätigte Verknüpfungen minen",
+        "unverified_links_title": "Auch Kampagnen minen, deren Konto-Verknüpfungsstatus Twitch nicht mehr meldet. Nur für Spiele aktivieren, die Sie wirklich verknüpft haben.",
+        "list_view": "Listenansicht",
+        "list_view_title": "Kampagnen als kompakte Zeilen statt als Karten anzeigen"
       },
       "filter_linked": "Verknüpft",
       "no_campaigns_filtered": "Keine Kampagnen entsprechen den aktuellen Filtern.",
@@ -156,21 +180,27 @@
       "farm_title_farm": "Klicken, um dieses Spiel zu farmen",
       "drop_singular": "Drop",
       "drop_plural": "Drops",
-      "drops_left_suffix": "übrig"
+      "drops_left_suffix": "übrig",
+      "sub_only": "🔒 Nur mit Abo",
+      "sub_only_title": "Benötigt ein Kanal-Abo — durch Zuschauen nicht verdienbar",
+      "drop_few": "Drops",
+      "drops_left_format": "{count} {drops} übrig"
     },
     "settings": {
       "general": {
         "name": "Allgemein",
-        "dark_mode": "Dunkler Modus"
+        "dark_mode": "Dunkler Modus",
+        "show_usernames": "Twitch-Benutzernamen in der Kopfzeile anzeigen",
+        "tab_counter": "Verbleibende Drops (verknüpft) im Tab-Titel anzeigen"
       },
       "reload": "Kampagnen neu laden",
       "reload_campaigns": "Kampagnen neu laden",
-      "dump_diagnostics": "Dump diagnosis data",
-      "diagnostics_help": "Saves deidentified miner state and recent sanitized API responses to the diagnostics folder in this account's data directory.",
-      "diagnostics_saving": "Saving diagnosis data…",
-      "diagnostics_saved": "Diagnosis data saved to {path}.",
-      "diagnostics_error": "Could not save diagnosis data. Try again.",
-      "diagnostics_busy": "A diagnosis dump is already running or was just saved. Wait a few seconds and try again.",
+      "dump_diagnostics": "Diagnosedaten speichern",
+      "diagnostics_help": "Speichert den anonymisierten Miner-Zustand und bereinigte aktuelle API-Antworten im Diagnose-Ordner im Datenverzeichnis dieses Kontos.",
+      "diagnostics_saving": "Diagnosedaten werden gespeichert…",
+      "diagnostics_saved": "Diagnosedaten gespeichert unter {path}.",
+      "diagnostics_error": "Diagnosedaten konnten nicht gespeichert werden. Bitte erneut versuchen.",
+      "diagnostics_busy": "Ein Diagnose-Speichervorgang läuft bereits oder wurde gerade abgeschlossen. Bitte ein paar Sekunden warten und erneut versuchen.",
       "games_to_watch": "Zu beobachtende Spiele",
       "games_help": "Wählen Sie Spiele zum Ansehen aus. Die Reihenfolge ist wichtig - ziehen Sie, um die Priorität zu ändern (oben = höchste Priorität).",
       "search_games": "Spiele suchen...",
@@ -213,7 +243,11 @@
         "disconnect": "Trennen",
         "disconnect_confirm": "Discord-Bot trennen?",
         "invite_bot": "Bot einladen",
-        "expires": "Läuft in 10 Min. ab"
+        "expires": "Läuft in 10 Min. ab",
+        "drops_label": "🎁 Drops: ",
+        "points_label": "💰 Punkte: ",
+        "clear_confirm": "Den {type}-Benachrichtigungskanal leeren?",
+        "health_label": "🩺 Health: "
       },
       "notifications_header": "Benachrichtigungen",
       "push_enabled": "Browser-Push-Benachrichtigungen",
@@ -254,7 +288,65 @@
       "blacklist_ids_header": "Blockierte Drop-IDs",
       "blacklist_ids_help": "Bestimmte Drops, die anhand der exakten ID ausgeschlossen werden — über die 🚫-Schaltfläche neben einem aktiven Drop oder manuell unten hinzugefügt. Im Gegensatz zur Schlüsselwort-Blacklist oben betrifft dies genau einen Drop; andere Drops desselben Spiels werden weiterhin gemint.",
       "blacklisted_games_header": "Blockierte Spiele",
-      "blacklisted_games_help": "Spiele, die hier aufgeführt sind, werden nie automatisch zu \"Zu beobachtende Spiele\" hinzugefügt durch \"Verlinkte Spiele automatisch hinzufügen\", selbst wenn Twitch eine Drop-Kampagne dafür verlinkt. Das Entfernen eines Spiels aus \"Zu beobachtende Spiele\" bewirkt dies bereits automatisch — verwenden Sie diese Liste, um ein Spiel direkt zu blockieren, ohne es vorher hinzuzufügen."
+      "blacklisted_games_help": "Spiele, die hier aufgeführt sind, werden nie automatisch zu \"Zu beobachtende Spiele\" hinzugefügt durch \"Verlinkte Spiele automatisch hinzufügen\", selbst wenn Twitch eine Drop-Kampagne dafür verlinkt. Das Entfernen eines Spiels aus \"Zu beobachtende Spiele\" bewirkt dies bereits automatisch — verwenden Sie diese Liste, um ein Spiel direkt zu blockieren, ohne es vorher hinzuzufügen.",
+      "categories": {
+        "system": "System",
+        "notifications": "Benachrichtigungen",
+        "mining": "Mining",
+        "idle_points": "Leerlauf & Punkte",
+        "predictions": "Vorhersagen"
+      },
+      "set_proxy_title": "Proxy setzen und prüfen",
+      "verify_proxy_title": "Proxy-Verbindung testen",
+      "proxy_verifying": "Verbindung wird geprüft...",
+      "proxy_empty": "Bitte zuerst eine Proxy-URL eingeben.",
+      "password_repeat_placeholder": "Neues Passwort wiederholen",
+      "blacklist_placeholder": "JP, Korea, (KR), exklusiv...",
+      "blacklist_ids_placeholder": "Drop-ID...",
+      "blacklisted_games_placeholder": "Spielname...",
+      "select_badge_emote": "Abzeichen/Emote auswählen",
+      "auto_prioritize": "Automatisch nach Kampagnenende priorisieren",
+      "auto_add_linked": "Verknüpfte Spiele automatisch zur Watchlist hinzufügen",
+      "idle_parallel": "Paralleler Leerlauf (alle Kanäle gleichzeitig schauen)",
+      "idle_parallel_help": "Im Leerlauf Kanalpunkte von mehreren Kanälen gleichzeitig sammeln.",
+      "preferred_games": "⭐ Bevorzugte Spiele",
+      "preferred_games_help": "Spiele, die immer beobachtet werden — auch ohne aktive Drop-Kampagne. Verbindet sich automatisch, sobald eine Kampagne erscheint. Werden nie automatisch entfernt.",
+      "priority_list_only": "Nur Prioritätsliste",
+      "priority_list_only_help": "Wenn aus, wird jedes andere Spiel mit aktiver Drop-Kampagne gemined, sobald keines Ihrer Prioritäts- oder bevorzugten Spiele live ist. Ihre Liste hat immer Vorrang.",
+      "webhook_missing": "Keine Webhook-URL gesetzt.",
+      "push_blocked": "Browser-Benachrichtigungen sind blockiert. Bitte erlauben Sie sie in den Browser-Einstellungen (Schloss-Symbol in der Adressleiste) und laden Sie die Seite neu.",
+      "predictions": {
+        "header": "🎯 Auto-Wetten",
+        "help": "Automatisch Kanalpunkte auf Vorhersagen setzen.",
+        "enable": "Auto-Wetten aktivieren",
+        "strategy": "Strategie",
+        "strategy_smart": "SMART (nach Abstand der Quoten)",
+        "strategy_percentage": "PERCENTAGE (immer wetten)",
+        "strategy_high_odds": "HIGH_ODDS (Außenseiter)",
+        "strategy_most_voted": "MOST_VOTED (Mehrheit)",
+        "bet_gap_title": "Mindestabstand zwischen den Stimmanteilen der beiden führenden Ergebnisse, damit eine SMART-Wette platziert wird — ist der Abstand kleiner, wird die Vorhersage als zu unsicher übersprungen. Betrifft nur die SMART-Strategie.",
+        "bet_pct": "Einsatz in % des Guthabens",
+        "bet_max": "Max. Punkte pro Wette",
+        "bet_min": "Mindestguthaben zum Wetten",
+        "bet_delay": "Verzögerung vor Schließung (s)",
+        "whitelist_header": "📋 Kanal-Whitelist",
+        "whitelist_help": "Nur auf Vorhersagen in diesen Kanälen wetten. Leer lassen, um auf allen Kanälen zu wetten.",
+        "channel_placeholder": "Kanalname...",
+        "overrides_header": "⚙️ Kanal-spezifische Einstellungen",
+        "overrides_help": "Globale Vorhersage-Einstellungen pro Kanal überschreiben. Feld leer lassen, um den globalen Wert zu verwenden.",
+        "add_channel": "Kanal hinzufügen",
+        "no_overrides": "Keine kanal-spezifischen Einstellungen konfiguriert.",
+        "global_placeholder": "(global)",
+        "col_channel": "Kanal",
+        "col_strategy": "Strategie",
+        "col_bet_pct": "Einsatz %",
+        "col_max_pts": "Max. Pkt.",
+        "col_min_balance": "Min. Guth.",
+        "col_delay": "Verz. (s)"
+      },
+      "campaign_end_notification": "⏰ Kampagne endet in ~{hours} h",
+      "discord_health_webhook_label": "Health-Alarm-Webhook:",
+      "discord_health_webhook_help": "Meldet, wenn die Twitch-Anmeldung seit 30+ Minuten wartet oder das Mining hängt, und erneut, wenn es wieder läuft. Leer: nutzt den Drop-Webhook."
     },
     "help": {
       "about": "Über Twitch Drops Miner",
@@ -296,7 +388,9 @@
     "footer": {
       "version": "Version:",
       "loading": "Laden...",
-      "update_available": "Update verfügbar:"
+      "update_available": "Update verfügbar:",
+      "update_title": "Klicken, um das Update herunterzuladen",
+      "support": "Support"
     },
     "badges": {
       "manual": {
@@ -311,7 +405,10 @@
     },
     "wanted": {
       "name": "Wunsch-Drops Warteschlange",
-      "none": "Keine Wunsch-Drops in der Warteschlange..."
+      "none": "Keine Wunsch-Drops in der Warteschlange...",
+      "waiting_for_campaign": "⭐ Wartet auf Kampagne",
+      "no_campaign": "Keine Kampagne",
+      "fallback": "Fallback"
     },
     "system": {
       "header": "System",
@@ -327,7 +424,44 @@
       "reload_ok": "Kampagnen-Neuladen ausgelöst.",
       "restart_confirm": "Den Miner neu starten? PM2 startet ihn automatisch neu.",
       "restart_ok": "Miner wird gestoppt — Neustart über PM2 in wenigen Sekunden.",
-      "accounts_header": "Konten"
+      "accounts_header": "Konten",
+      "twitch_logout_header": "Twitch-Konto",
+      "twitch_logout_desc": "Die gespeicherte Twitch-Sitzung vergessen und neu anmelden. Dashboard-Passwort und übrige Einstellungen bleiben erhalten.",
+      "twitch_logout_btn": "Von Twitch abmelden",
+      "twitch_logout_confirm": "Von Twitch abmelden? Der Miner startet neu und fordert eine neue Anmeldung an.",
+      "twitch_logout_ok": "Twitch-Sitzung gelöscht — Neustart für eine neue Anmeldung...",
+      "instances_header": "Instanzen",
+      "instances_desc": "Jede Instanz ist ein eigener TDM-Prozess mit eigener Twitch-Sitzung.",
+      "proxy_recommended": "Proxy empfohlen:",
+      "proxy_recommended_text": "3+ Konten über eine IP erhöhen das Risiko einer Twitch-Sperre. Fügen Sie pro Konto einen Proxy unter Einstellungen → Proxy hinzu.",
+      "add_instance": "+ Instanz hinzufügen",
+      "register_desc": "Betreiben Sie bereits selbst eine Instanz (eigener Port, anderer Host/Container)? Hier registrieren — es wird nichts gestartet, gestoppt oder umkonfiguriert.",
+      "register_label_placeholder": "Bezeichnung (optional)",
+      "register_btn": "Registrieren",
+      "diagnostics_header": "Diagnose",
+      "diagnostics_desc": "Einen Fehler melden? Laden Sie die Logdatei herunter und hängen Sie sie an — das macht die Ursachensuche viel einfacher.",
+      "download_logs": "⬇ Logs herunterladen",
+      "accounts_desc": "Zwischen gespeicherten Twitch-Anmeldungen dieser Instanz wechseln.",
+      "instance_remove_title": "Instanz entfernen",
+      "instance_remove_confirm": "Konto {n} entfernen? Der Prozess wird gestoppt. Die Daten bleiben erhalten.",
+      "instance_removing": "Instanz {n} wird entfernt...",
+      "instance_removed": "Instanz {n} entfernt. Seite wird neu geladen...",
+      "instances_load_failed": "Instanzen konnten nicht geladen werden.",
+      "instance_creating": "Neue Instanz wird erstellt... (dauert ca. 10 s)",
+      "instance_created": "Instanz erstellt! Seite wird neu geladen...",
+      "instance_create_failed": "Instanz konnte nicht erstellt werden",
+      "invalid_port": "Bitte einen gültigen Port eingeben.",
+      "instance_registered": "Instanz registriert! Seite wird neu geladen...",
+      "instance_register_failed": "Instanz konnte nicht registriert werden",
+      "no_accounts": "Noch keine Konten gespeichert.",
+      "account_active": "Aktiv",
+      "not_logged_in": "Nicht angemeldet",
+      "switch_confirm": "Zu Konto \"{label}\" wechseln? Der Miner startet neu.",
+      "switched": "Zu {label} gewechselt, Neustart...",
+      "delete_confirm": "Konto \"{label}\" löschen?",
+      "accounts_load_failed": "Fehler beim Laden der Konten.",
+      "enter_label": "Bitte zuerst eine Bezeichnung eingeben.",
+      "account_added": "Konto \"{label}\" hinzugefügt, Miner startet zur Anmeldung neu..."
     },
     "analytics": {
       "stats_header": "Drop-Statistiken",
@@ -347,7 +481,25 @@
       "no_subscribed_channels": "Keine abonnierten Kanäle unter den {count} erfassten. Wechsle zu \"Alle\", um alle anzuzeigen.",
       "drop_history": "Drop-Verlauf",
       "no_history": "Noch keine Drops erhalten.",
-      "unknown_result_tooltip": "Ergebnis unbekannt — die App hat nicht mitbekommen, wie diese Vorhersage endete (Bot-Neustart, Verbindungsabbruch oder Kanal ging offline, bevor sie abgeschlossen war)."
+      "unknown_result_tooltip": "Ergebnis unbekannt — die App hat nicht mitbekommen, wie diese Vorhersage endete (Bot-Neustart, Verbindungsabbruch oder Kanal ging offline, bevor sie abgeschlossen war).",
+      "export_csv": "⤓ CSV exportieren",
+      "export_csv_title": "Den gesamten Drop-Verlauf als CSV-Datei herunterladen",
+      "points_over_time": "📈 Punkte im Zeitverlauf",
+      "predictions_history": "Vorhersage-Verlauf",
+      "pred_col_time": "Zeit",
+      "pred_col_channel": "Kanal",
+      "pred_col_prediction": "Vorhersage",
+      "pred_col_selection": "Auswahl",
+      "pred_col_bet": "Einsatz",
+      "pred_col_result": "Ergebnis",
+      "pred_col_won": "Gewonnen",
+      "pred_total": "Gesamt",
+      "pred_win_rate": "Gewinnquote",
+      "pred_net": "Netto",
+      "history_summary": "{total} gesamt · {today} heute",
+      "cp_summary": "{channels} Kanäle · {points} Pkt. gesamt",
+      "cp_summary_session": " · +{points} in dieser Sitzung",
+      "cp_disabled": "Keine Punkte"
     },
     "drops_today": {
       "title": "Heute erhaltene Drops",
@@ -367,7 +519,8 @@
       "badge_earned": "✓ Verdient",
       "badge_earned_title": "Sehzeit abgeschlossen — wartet auf Bestätigung durch Twitch",
       "badge_claim_now": "⚡ Jetzt einlösen",
-      "badge_percent_left": "{pct}% · noch {mins} Min."
+      "badge_percent_left": "{pct}% · noch {mins} Min.",
+      "badge_sub_only": "🔒 Nur mit Abo"
     },
     "accounts_manager": {
       "aria_label": "Konten verwalten",
@@ -452,10 +605,38 @@
       "pause_label": "Pause",
       "pause_desc": "Miner pausieren / fortsetzen",
       "resume_label": "Fortsetzen",
-      "resume_desc": "Klicken zum Fortsetzen"
+      "resume_desc": "Klicken zum Fortsetzen",
+      "check_drops_desc_default": "Nach aktiven Drops suchen",
+      "mining_active_label": "Drop-Mining aktiv",
+      "mining_active_desc": "Drops werden gerade gefarmt"
     },
     "sidebar": {
       "accounts": "Konten"
+    },
+    "common": {
+      "add": "Hinzufügen",
+      "clear": "Leeren",
+      "remove": "Entfernen",
+      "rename": "Umbenennen",
+      "switch": "Wechseln",
+      "error": "Fehler: {error}",
+      "failed": "Fehlgeschlagen",
+      "unknown": "Unbekannt",
+      "prev": "‹ Zurück",
+      "next": "Weiter ›",
+      "page_of": "Seite {page} von {total}",
+      "points_short": "{points} Pkt.",
+      "loading_btn": "↻ Wird geladen...",
+      "request_failed": "❌ Anfrage fehlgeschlagen: {error}"
+    },
+    "console": {
+      "toggle_title": "Log-Ausgabe ein-/ausblenden"
+    },
+    "health": {
+      "login": "⚠️ Twitch-Anmeldung wartet",
+      "login_resolved": "✅ Twitch-Anmeldung abgeschlossen",
+      "stall": "⚠️ Mining hängt — seit 15+ Minuten kein Watch",
+      "stall_resolved": "✅ Mining läuft wieder"
     }
   }
 }

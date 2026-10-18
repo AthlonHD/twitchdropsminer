@@ -1,14 +1,15 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
+import json as _json
 import logging
 import uuid
 from typing import TYPE_CHECKING
 
-import json as _json
-
 from src.config import DATA_DIR, GQL_OPERATIONS
 from src.utils import task_wrapper
+
 
 if TYPE_CHECKING:
     from src.core.client import Twitch
@@ -20,8 +21,6 @@ MAX_HISTORY = 500
 
 def _get_predictions_file():
     try:
-        import os
-        from pathlib import Path
         _wc = DATA_DIR / "web_config.json"
         cfg = _json.loads(_wc.read_text()) if _wc.exists() else {}
         account = cfg.get("active_account")
@@ -271,8 +270,9 @@ class PredictionService:
                 logger.info(f"Prediction {event_id}: no suitable outcome, skipping")
                 return
             # Get current balance
-            from src.services.message_handlers import _get_points_file
             import json as _j
+
+            from src.services.message_handlers import _get_points_file
             pfile = _get_points_file()
             try:
                 pts = _j.loads(pfile.read_text()) if pfile.exists() else {}
@@ -347,13 +347,10 @@ class PredictionService:
         hist.append(entry)
         if len(hist) > MAX_HISTORY:
             hist = hist[-MAX_HISTORY:]
-        try:
+        with contextlib.suppress(Exception):
             p.write_text(_json.dumps(hist, indent=2))
-        except Exception:
-            pass
 
     async def _record_result(self, event_id, event, channel_name):
-        from datetime import datetime, timezone
         p = _get_predictions_file()
         try:
             hist = _json.loads(p.read_text()) if p.exists() else []
@@ -384,13 +381,11 @@ class PredictionService:
                     entry["result"] = "LOSE"
                     entry["points_won"] = 0
                 # Notify frontend so daily-points counter can correct for bet refund on WIN
-                try:
+                with contextlib.suppress(Exception):
                     await self._twitch.gui._broadcaster.emit("prediction_result", {
                         "result": entry["result"],
                         "points_bet": entry["points_bet"],
                     })
-                except Exception:
-                    pass
                 # Discord notification
                 webhook = self._twitch.settings.discord_webhook_points
                 if webhook:
@@ -412,10 +407,8 @@ class PredictionService:
                     except Exception:
                         pass
                 break
-        try:
+        with contextlib.suppress(Exception):
             p.write_text(_json.dumps(hist, indent=2))
-        except Exception:
-            pass
 
     def get_history(self) -> list[dict]:
         p = _get_predictions_file()
@@ -437,7 +430,5 @@ class PredictionService:
             return
         changed = _flip_pending_matching(hist, lambda e: e.get("channel") == channel_name.lower())
         if changed:
-            try:
+            with contextlib.suppress(Exception):
                 p.write_text(_json.dumps(hist, indent=2))
-            except Exception:
-                pass

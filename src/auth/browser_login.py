@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import contextlib
 import json
 import logging
 import os
@@ -28,6 +29,7 @@ from datetime import datetime, timedelta, timezone
 from playwright.async_api import async_playwright
 
 from src.auth.plain_chrome import PlainChrome
+
 
 logger = logging.getLogger("TwitchDrops")
 
@@ -431,10 +433,8 @@ def _terminate_process_group(proc: asyncio.subprocess.Process) -> None:
     try:
         os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
     except (ProcessLookupError, PermissionError):
-        try:
+        with contextlib.suppress(ProcessLookupError):
             proc.terminate()
-        except ProcessLookupError:
-            pass
     except Exception as exc:
         logger.warning(f"Error terminating process group for pid {proc.pid}: {exc}")
 

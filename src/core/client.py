@@ -20,21 +20,23 @@ from src.config import (
     State,
     WebsocketTopic,
 )
+from src.config.paths import _ACCOUNT_DATA_DIR
+from src.diagnostics import Diagnostics
 from src.exceptions import (
     ExitRequest,
     MinerException,
     RequestException,
 )
-from src.config.paths import _ACCOUNT_DATA_DIR
-from src.diagnostics import Diagnostics
 from src.i18n import _
 from src.models.campaign import DropsCampaign
 from src.models.channel import Channel
 from src.services.channel_service import ChannelService
 from src.services.drop_history import finalize_drop_claim
+from src.services.health_monitor_service import HealthMonitorService
 from src.services.inventory_service import InventoryService
 from src.services.irc_service import IRCService
 from src.services.maintenance import MaintenanceService
+from src.services.manual_mode_store import ManualModeStore
 from src.services.message_handlers import MessageHandlerService
 from src.services.prediction_service import PredictionService
 from src.services.scheduler_service import SchedulerService
@@ -98,6 +100,8 @@ class Twitch:
         # Manual mode tracking
         self._manual_target_channel: Channel | None = None
         self._manual_target_game: Game | None = None
+        self._manual_mode_store = ManualModeStore(_ACCOUNT_DATA_DIR / "manual_mode.json")
+        self._pending_manual_mode: dict[str, str] | None = self._manual_mode_store.load()
         # Websocket
         self.websocket = WebsocketPool(self)
         # Maintenance task
@@ -115,6 +119,8 @@ class Twitch:
         self._user_override: bool = False
         self._scheduler_task: asyncio.Task[None] | None = None
         self._debug_memory_task: asyncio.Task[None] | None = None
+        self._health_monitor: HealthMonitorService = HealthMonitorService(self)
+        self._health_task: asyncio.Task[None] | None = None
         self._scheduler_service: SchedulerService = SchedulerService(self)
         from src.services.campaign_alert_service import CampaignAlertService
         self._campaign_alert_service: CampaignAlertService = CampaignAlertService(self)
@@ -175,6 +181,9 @@ class Twitch:
         if self._scheduler_task is not None:
             self._scheduler_task.cancel()
             self._scheduler_task = None
+        if self._health_task is not None:
+            self._health_task.cancel()
+            self._health_task = None
         # stop websocket and close HTTP session
         await self.websocket.stop(clear_topics=True)
         await self._irc_service.stop()
@@ -327,6 +336,9 @@ class Twitch:
         """
         # Initialize API clients now that GUI is available
         self._ensure_api_clients()
+        # Started before get_auth() so a login that never completes is reported too.
+        if self._health_task is None:
+            self._health_task = asyncio.create_task(self._health_monitor.run())
         auth_state = await self.get_auth()
         await self.websocket.start()
         await self._irc_service.start()
@@ -697,6 +709,7 @@ class Twitch:
                         ) is not None:
                             active_drop.display(countdown=False, subone=True)
                         break
+                self._restore_manual_mode(channels.values())
                 self.change_state(State.CHANNEL_SWITCH)
                 del (
                     no_acl,
@@ -1064,6 +1077,7 @@ class Twitch:
 
         self._manual_target_channel = channel
         self._manual_target_game = channel.game
+        self._manual_mode_store.save(channel.game.name, channel.name)
         self._skipped_games.clear()
         logger.info(f"Entered manual mode for game: {channel.game.name}, channel: {channel.name}")
 
@@ -1087,12 +1101,26 @@ class Twitch:
 
         self._manual_target_channel = None
         self._manual_target_game = None
+        self._manual_mode_store.clear()
 
         # Broadcast manual mode change to GUI
         self.gui.broadcast_manual_mode_change(self.get_manual_mode_info())
 
         # Trigger channel switch to select new channel automatically
         self.change_state(State.CHANNEL_SWITCH)
+
+    def _restore_manual_mode(self, channels: abc.Iterable[Channel]) -> None:
+        """Re-enter the manual mode saved before the last restart, once channels are known."""
+        saved, self._pending_manual_mode = self._pending_manual_mode, None
+        if saved is None or self.is_manual_mode():
+            return
+        channel = ManualModeStore.find_channel(saved, channels)
+        if channel is None:
+            logger.info(f"Manual mode for {saved['game_name']} not restored: no channel available")
+            self._manual_mode_store.clear()
+            return
+        logger.info(f"Restoring manual mode for {saved['game_name']}")
+        self.enter_manual_mode(channel)
 
     def get_manual_mode_info(self) -> dict[str, Any]:
         """

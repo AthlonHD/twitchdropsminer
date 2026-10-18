@@ -1,6 +1,6 @@
 [project]
 name = "twitch-drops-miner"
-version = "1.8.4"
+version = "1.8.5"
 description = "Automatically mine Twitch drops without downloading stream data"
 readme = "README.md"
 requires-python = ">=3.12"
@@ -16,6 +16,7 @@ dependencies = [
     "python-multipart>=0.0.9",
     "coverage>=7.3.1",
     "playwright>=1.61.0",
+    "tzdata",
 ]
 
 [project.optional-dependencies]
@@ -43,6 +44,7 @@ dev = [
 # --no-sandbox into its launch args).
 browser = [
     "playwright>=1.61.0",
+    "tzdata",
 ]
 
 [build-system]

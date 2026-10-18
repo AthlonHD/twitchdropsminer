@@ -4,6 +4,7 @@ from src.config.settings import Settings
 from src.models.campaign import DropsCampaign
 from src.models.game import Game
 
+
 # Display order for the "Wanted Drop Queue" / Mining Benefits list: badge and
 # emote drops are usually the most sought-after, "other" (unknown type) next,
 # in-game items last. Games are grouped by the highest-priority benefit type
@@ -52,7 +53,7 @@ class StreamSelector:
         # Build games_to_watch first (preserving user order), then append preferred games
         # sorted by soonest campaign end time so the most urgent game is watched first.
         all_game_names = list(games_to_watch)
-        seen = set(g.lower() for g in games_to_watch)
+        seen = {g.lower() for g in games_to_watch}
 
         # Map preferred game names (not already in games_to_watch) to their soonest ends_at
         preferred_only: list[str] = []
@@ -74,7 +75,7 @@ class StreamSelector:
             preferred_only.sort(key=lambda g: preferred_end_time.get(g, far_future))
             all_game_names.extend(preferred_only)
 
-        def build(game_names: list[str]) -> list[dict]:
+        def build(game_names: list[str], fallback: bool = False) -> list[dict]:
             built: list[dict] = []
             for game_name in game_names:
                 wanted_campaigns = []
@@ -136,6 +137,7 @@ class StreamSelector:
                             "game_obj": game_obj,
                             "campaigns": wanted_campaigns,
                             "preferred": is_preferred,
+                            "fallback": fallback,
                         }
                     )
             return built
@@ -160,7 +162,9 @@ class StreamSelector:
                     continue
                 if name not in other_end_time or campaign.ends_at < other_end_time[name]:
                     other_end_time[name] = campaign.ends_at
-            wanted_games.extend(build(sorted(other_end_time, key=other_end_time.__getitem__)))
+            wanted_games.extend(
+                build(sorted(other_end_time, key=other_end_time.__getitem__), fallback=True)
+            )
         return wanted_games
 
     def get_wanted_game_tree(

@@ -9,7 +9,7 @@ from typing import TYPE_CHECKING, cast
 
 import aiohttp
 
-from src.config import COOKIES_PATH, ClientType
+from src.config import COOKIES_PATH
 from src.i18n import _
 from src.utils import CHARS_HEX_LOWER, create_nonce
 
@@ -58,6 +58,8 @@ class _AuthState:
         self._integrity_expires_at: datetime | None = None
         self._integrity_failed_until: datetime | None = None
         self._integrity_minted_at: datetime | None = None
+        # serializes renewals: concurrent validate() calls would each launch a Chromium
+        self._integrity_lock = asyncio.Lock()
 
     def _hasattrs(self, *attrs: str) -> bool:
         """Check if all specified attributes exist."""
@@ -323,15 +325,26 @@ class _AuthState:
             return
         from src.auth import browser_login
 
+        if not self._integrity_renewal_due():
+            return
+        async with self._integrity_lock:
+            if not self._integrity_renewal_due():
+                return  # another caller renewed it while we waited
+            logger.info("Renewing the Client-Integrity token (drives a real, throwaway Chromium)...")
+            result = await browser_login.acquire_integrity_token(self.access_token, self.device_id)
+            self._adopt_integrity_token(result)
+
+    def _integrity_renewal_due(self) -> bool:
         now = datetime.now(timezone.utc)
-        if self._integrity_token is not None and self._integrity_expires_at is not None:
-            if now < self._integrity_expires_at - INTEGRITY_RENEW_MARGIN:
-                return  # still fresh
+        if (
+            self._integrity_token is not None
+            and self._integrity_expires_at is not None
+            and now < self._integrity_expires_at - INTEGRITY_RENEW_MARGIN
+        ):
+            return False  # still fresh
         if self._integrity_failed_until is not None and now < self._integrity_failed_until:
-            return  # don't hammer a failing acquisition every single GQL request
-        logger.info("Renewing the Client-Integrity token (drives a real, throwaway Chromium)...")
-        result = await browser_login.acquire_integrity_token(self.access_token, self.device_id)
-        self._adopt_integrity_token(result)
+            return False  # don't hammer a failing acquisition every single GQL request
+        return True
 
     def invalidate(self):
         """Invalidate the current access token."""

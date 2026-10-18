@@ -24,6 +24,7 @@ from typing import TYPE_CHECKING
 
 from src.utils.async_helpers import task_wrapper
 
+
 # 2026-09-18, GitHub issue #13: `resource` is POSIX-only stdlib -- doesn't
 # exist on Windows at all. This module was only ever meant to be opt-in
 # (TDM_DEBUG_MEMORY env var), but src/core/client.py imports
@@ -53,7 +54,7 @@ def current_rss_mb() -> float:
     return resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / 1024
 
 
-def collection_sizes(twitch: "Twitch") -> dict[str, int]:
+def collection_sizes(twitch: Twitch) -> dict[str, int]:
     """
     Sizes of the long-lived collections most likely to grow unbounded over
     a multi-day run, for spotting which one (if any) is actually climbing.
@@ -70,7 +71,7 @@ def collection_sizes(twitch: "Twitch") -> dict[str, int]:
 
 @task_wrapper
 async def run_debug_memory_logger(
-    twitch: "Twitch", interval_seconds: float = DEFAULT_INTERVAL_SECONDS
+    twitch: Twitch, interval_seconds: float = DEFAULT_INTERVAL_SECONDS
 ) -> None:
     """Log RSS + long-lived collection sizes every `interval_seconds`, forever."""
     if resource is None:
