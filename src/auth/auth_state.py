@@ -342,9 +342,8 @@ class _AuthState:
             and now < self._integrity_expires_at - INTEGRITY_RENEW_MARGIN
         ):
             return False  # still fresh
-        if self._integrity_failed_until is not None and now < self._integrity_failed_until:
-            return False  # don't hammer a failing acquisition every single GQL request
-        return True
+        # don't hammer a failing acquisition every single GQL request
+        return self._integrity_failed_until is None or now >= self._integrity_failed_until
 
     def invalidate(self):
         """Invalidate the current access token."""

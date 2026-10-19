@@ -554,18 +554,21 @@ class MessageHandlerService:
                 # Append timestamped snapshot for analytics
                 _ts_file = _pfile.parent / "channel_points_ts.json"
                 try:
-                    _ts_raw = _json_mod.loads(_ts_file.read_text()) if _ts_file.exists() else {}
+                    # json_load falls back to {} (with a warning) on a corrupt
+                    # file, so the next save replaces it instead of every
+                    # append failing forever.
                     _ts_data = merge_case_variant_keys(
-                        _ts_raw, combine=lambda a, b: sorted(a + b, key=lambda s: s.get("ts", ""))
+                        json_load(_ts_file, {}, merge=False),
+                        combine=lambda a, b: sorted(a + b, key=lambda s: s.get("ts", "")),
                     )
                     _snapshots = _ts_data.get(_login_key, [])
                     _snapshots.append({"ts": datetime.now(timezone.utc).isoformat(), "balance": points})
                     if len(_snapshots) > 1000:
                         _snapshots = _snapshots[-1000:]
                     _ts_data[_login_key] = _snapshots
-                    _ts_file.write_text(_json_mod.dumps(_ts_data))
-                except Exception:
-                    pass
+                    json_save(_ts_file, _ts_data, indent=None)
+                except Exception as e:
+                    logger.warning(f"Could not record channel points snapshot for {channel_login}: {e}")
         except Exception as e:
             logger.warning(f"Could not fetch channel points balance for {channel_login}: {e}")
 

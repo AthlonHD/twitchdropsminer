@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 from collections.abc import Callable, Mapping
 from datetime import datetime, timezone
 from enum import Enum
@@ -198,7 +199,9 @@ def json_load(path: Path, defaults: _JSON_T, *, merge: bool = True) -> _JSON_T:
     return cast(_JSON_T, combined)
 
 
-def json_save(path: Path, contents: Mapping[Any, Any], *, sort: bool = False) -> None:
+def json_save(
+    path: Path, contents: Mapping[Any, Any], *, sort: bool = False, indent: int | None = 4
+) -> None:
     """
     Save data to a JSON file with custom serialization.
 
@@ -206,6 +209,14 @@ def json_save(path: Path, contents: Mapping[Any, Any], *, sort: bool = False) ->
         path: Path to save JSON file
         contents: Data to serialize
         sort: If True, sort keys alphabetically
+        indent: JSON indent, None for compact output
     """
-    with open(path, "w", encoding="utf8") as file:
-        json.dump(contents, file, default=_serialize, sort_keys=sort, indent=4)
+    # Write to a temp file and swap it in, so a crash or container stop
+    # mid-write can never leave a truncated file behind.
+    tmp = path.with_name(path.name + ".tmp")
+    try:
+        with open(tmp, "w", encoding="utf8") as file:
+            json.dump(contents, file, default=_serialize, sort_keys=sort, indent=indent)
+        os.replace(tmp, path)
+    finally:
+        tmp.unlink(missing_ok=True)
