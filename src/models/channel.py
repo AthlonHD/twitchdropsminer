@@ -194,6 +194,7 @@ class Channel:
         "_ban_expires_at",
         "_ban_permanent",
         "acl_based",
+        "_logo",
     )
 
     def __init__(
@@ -224,6 +225,8 @@ class Channel:
         # • if we're watching a non-based channel, a based channel going up triggers a switch
         # • not cleaned up unless they're streaming a game we haven't selected
         self.acl_based: bool = acl_based
+        # channel avatar (profile image URL), filled in from GQL responses
+        self._logo: str | None = None
 
     @classmethod
     def from_acl(cls, twitch: Twitch, data: JsonType) -> Channel:
@@ -243,6 +246,7 @@ class Channel:
         self = cls(
             twitch, id=channel["id"], login=channel["login"], display_name=channel["displayName"]
         )
+        self.update_logo(channel)
         self._stream = Stream.from_directory(self, data, drops_enabled=drops_enabled)
         return self
 
@@ -315,6 +319,21 @@ class Channel:
                         self._ban_expires_at = expiry.astimezone(timezone.utc).timestamp()
                 except (ValueError, OverflowError):
                     pass
+
+    @property
+    def logo(self) -> str | None:
+        """Channel avatar URL, or None until a GQL response carried one."""
+        return self._logo
+
+    def update_logo(self, data: JsonType | None) -> None:
+        """Take the avatar from a GQL user/broadcaster object, if it has one.
+
+        DirectoryPage_Game's broadcaster and VideoPlayerStreamInfoOverlayChannel's
+        user both carry ``profileImageURL``; only https URLs are accepted.
+        """
+        url = data.get("profileImageURL") if isinstance(data, dict) else None
+        if isinstance(url, str) and url.startswith("https://"):
+            self._logo = url
 
     @property
     def name(self) -> str:
@@ -437,6 +456,7 @@ class Channel:
 
         Used for bulk-updates of channel statuses during reload.
         """
+        self.update_logo(channel_data)
         if not channel_data["stream"]:
             self._stream = None
             return
@@ -462,6 +482,7 @@ class Channel:
         # fill in display name
         if self._display_name is None:
             self._display_name = channel_data["displayName"]
+        self.update_logo(channel_data)
         if not channel_data["stream"]:
             return None
         stream = Stream.from_get_stream(self, channel_data)

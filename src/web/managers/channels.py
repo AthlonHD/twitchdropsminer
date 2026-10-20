@@ -43,6 +43,7 @@ class ChannelListManager:
             "online": channel.online,
             "drops_enabled": channel.drops_enabled,
             "acl_based": channel.acl_based,
+            "logo": channel.logo,
             "watching": channel.id == self._watching_id,
         }
         self._channels[channel.id] = channel_data
@@ -130,6 +131,7 @@ class ChannelListManager:
                 "online": channel.online,
                 "drops_enabled": channel.drops_enabled,
                 "acl_based": channel.acl_based,
+                "logo": channel.logo,
                 "watching": channel.id == self._watching_id,
             }
             new_channels[channel.id] = channel_data

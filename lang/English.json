@@ -10,7 +10,8 @@
     "no_channel": "No available channels to watch. Waiting for an ONLINE channel...",
     "no_campaign": "No active campaigns to mine drops for. Waiting for an active campaign...",
     "idle": "Idle: {channels}",
-    "idle_watching": "Idle watching: {channel}"
+    "idle_watching": "Idle watching: {channel}",
+    "paused": "Mining paused"
   },
   "login": {
     "unexpected_content": "Unexpected content type returned, usually due to being redirected. Do you need to login for internet access?",
@@ -105,7 +106,8 @@
       "view_campaign_drops": "View campaign drops",
       "minutes_progress": "{current} / {required} minutes",
       "time_remaining": "Time remaining: {time}",
-      "view_remaining_drops": "View remaining drops"
+      "view_remaining_drops": "View remaining drops",
+      "ignore_campaign_confirm": "Ignore the campaign \"{campaign}\"? None of its drops will be mined or claimed anymore."
     },
     "channels": {
       "name": "Channels",
@@ -246,7 +248,7 @@
       "idle_parallel": "Parallel idle (watch all channels simultaneously)",
       "idle_parallel_help": "Earn channel points from multiple channels at the same time when idle.",
       "preferred_games": "⭐ Preferred Games",
-      "preferred_games_help": "Games that are always watched — even without active drop campaigns. Auto-connects when a campaign appears. Never auto-removed.",
+      "preferred_games_help": "Games that are always watched — even without active drop campaigns. Auto-connects when a campaign appears. Never auto-removed. Ordered by the soonest campaign end, not by the position in the list.",
       "priority_list_only": "Priority list only",
       "priority_list_only_help": "When off, any other game with an active drop campaign is mined whenever none of your priority or preferred games is live. Your list always comes first.",
       "webhook_missing": "No webhook URL set.",
@@ -282,7 +284,9 @@
       },
       "campaign_end_notification": "⏰ Campaign ending in ~{hours}h",
       "discord_health_webhook_label": "Health Alert Webhook:",
-      "discord_health_webhook_help": "Fires when the Twitch login has been waiting for 30+ minutes or mining stalls, and again when it recovers. Empty: uses the drop webhook."
+      "discord_health_webhook_help": "Fires when the Twitch login has been waiting for 30+ minutes or mining stalls, and again when it recovers. Empty: uses the drop webhook.",
+      "no_games_found": "No games found",
+      "languages_failed": "Failed to load languages"
     },
     "help": {
       "about": "About Twitch Drops Miner",
@@ -430,7 +434,9 @@
       "drop_plural": "drops",
       "drops_left_suffix": "left",
       "drop_few": "drops",
-      "drops_left_format": "{count} {drops} left"
+      "drops_left_format": "{count} {drops} left",
+      "link_unverified_badge": "LINK UNVERIFIED",
+      "link_unverified_badge_title": "Link state unknown - mining because \"Mine unverified links\" is on"
     },
     "system": {
       "header": "System",
@@ -621,7 +627,9 @@
       "page_of": "Page {page} of {total}",
       "points_short": "{points} pts",
       "loading_btn": "↻ Loading...",
-      "request_failed": "❌ Request failed: {error}"
+      "request_failed": "❌ Request failed: {error}",
+      "move_up": "Move up",
+      "move_down": "Move down"
     },
     "console": {
       "toggle_title": "Toggle log output"

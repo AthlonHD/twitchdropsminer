@@ -1548,7 +1548,7 @@ function renderGameDropdown(searchTerm = '') {
     dropdown.innerHTML = '';
 
     if (filteredGames.length === 0) {
-        dropdown.replaceChildren(makeElement('div', { class: 'dropdown-item no-results' }, 'No games found'));
+        dropdown.replaceChildren(makeElement('div', { class: 'dropdown-item no-results' }, tr('gui.settings.no_games_found', 'No games found')));
         gameDropdownFocusedIndex = -1;
         return;
     }
@@ -1756,7 +1756,7 @@ function renderInventory() {
 
         // Linked/not linked badge — only show "Link Account" if linking is actually required
         const linkStatusBadge = campaign.link_assumed
-            ? makeElement('span', { class: 'campaign-badge linked', title: 'Link state unknown - mining because "Mine unverified links" is on' }, 'LINK UNVERIFIED')
+            ? makeElement('span', { class: 'campaign-badge linked', title: inv.link_unverified_badge_title || 'Link state unknown - mining because "Mine unverified links" is on' }, inv.link_unverified_badge || 'LINK UNVERIFIED')
             : campaign.linked
             ? makeElement('span', { class: 'campaign-badge linked', title: inv.linked_badge_title || 'Account is linked' }, inv.linked_badge || 'LINKED')
             : campaign.has_badge_or_emote
@@ -2450,9 +2450,13 @@ function renderIdleChannels(channels) {
     const container = document.getElementById('idle-channels-list');
     if (!container) return;
     container.replaceChildren();
+    // The list is in priority order (the first live channel is watched):
+    // reorder it by dragging, like the Preferred Games list.
     channels.forEach((ch, idx) => {
         const item = document.createElement('div');
         item.className = 'sortable-item';
+        item.draggable = true;
+        item.dataset.channel = ch;
         const label = document.createElement('span');
         label.textContent = ch;
         const btn = document.createElement('button');
@@ -2466,7 +2470,19 @@ function renderIdleChannels(channels) {
         item.appendChild(label);
         item.appendChild(btn);
         container.appendChild(item);
+        item.addEventListener('dragstart', handleDragStart);
+        item.addEventListener('dragover', handleDragOver);
+        item.addEventListener('drop', handleDrop);
+        item.addEventListener('dragend', handleIdleChannelsDragEnd);
     });
+}
+
+function handleIdleChannelsDragEnd(e) {
+    e.target.classList.remove('dragging');
+    const container = document.getElementById('idle-channels-list');
+    const newOrder = Array.from(container.querySelectorAll('.sortable-item')).map(item => item.dataset.channel);
+    renderIdleChannels(newOrder);
+    saveSettings();
 }
 
 function renderPreferredGames(games) {
@@ -2659,7 +2675,8 @@ function handleDragOver(e) {
     e.dataTransfer.dropEffect = 'move';
 
     const target = e.target.closest('.sortable-item');
-    if (target && target !== draggedElement) {
+    // only reorder within the list the item came from, never move it into another list
+    if (target && target !== draggedElement && draggedElement && target.parentNode === draggedElement.parentNode) {
         const container = target.parentNode;
         const allItems = [...container.querySelectorAll('.sortable-item')];
         const draggedIndex = allItems.indexOf(draggedElement);
@@ -3415,7 +3432,7 @@ async function fetchAndPopulateLanguages() {
         console.error('Failed to fetch languages:', error);
         const languageSelect = document.getElementById('language');
         if (languageSelect) {
-            languageSelect.replaceChildren(makeElement('option', { value: '' }, 'Failed to load languages'));
+            languageSelect.replaceChildren(makeElement('option', { value: '' }, tr('gui.settings.languages_failed', 'Failed to load languages')));
         }
         addConsoleLine('Error: Unable to fetch available languages. Please check your connection or try again later.');
     }
@@ -5184,8 +5201,8 @@ function renderWantedItems(tree) {
         const toggleEl = makeElement('span', { class: 'wq-toggle' }, '▾');
 
         // Up/Down move buttons (mobile-friendly)
-        const moveUpEl = makeElement('button', { class: 'wq-move', title: 'Move up' }, '↑');
-        const moveDownEl = makeElement('button', { class: 'wq-move', title: 'Move down' }, '↓');
+        const moveUpEl = makeElement('button', { class: 'wq-move', title: tr('gui.common.move_up', 'Move up') }, '↑');
+        const moveDownEl = makeElement('button', { class: 'wq-move', title: tr('gui.common.move_down', 'Move down') }, '↓');
         if (index === 0) moveUpEl.disabled = true;
         if (index === tree.length - 1) moveDownEl.disabled = true;
 

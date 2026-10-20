@@ -760,11 +760,27 @@ async def get_status():
     if not gui_manager or not twitch_client:
         raise HTTPException(status_code=503, detail="GUI not initialized")
 
+    # What is being mined / watched right now, over plain HTTP for status widgets
+    # and scripts (the dashboard gets the same through Socket.IO). An idle channel
+    # is not in /api/channels, so the watched channel is reported here as well.
+    watching = twitch_client.watching_channel.get_with_default(None)
+    watching_channel = None
+    if watching is not None:
+        watching_channel = {
+            "id": watching.id,
+            "login": watching._login,
+            "name": watching.name,
+            "game": watching.game.name if watching.game is not None else None,
+            "logo": getattr(watching, "logo", None),
+            "idle": watching in getattr(twitch_client, "_idle_channels_set", ()),
+        }
     return {
         "status": gui_manager.status.get(),
         "login": gui_manager.login.get_status(),
         "manual_mode": twitch_client.get_manual_mode_info(),
         "paused": twitch_client.is_paused() if twitch_client else False,
+        "current_drop": gui_manager.progress.get_current_drop(),
+        "watching_channel": watching_channel,
     }
 
 

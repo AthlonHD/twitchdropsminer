@@ -385,7 +385,8 @@ class Twitch:
         self.change_state(State.INVENTORY_FETCH)
         while True:
             if self._state is State.PAUSED:
-                self.gui.status.update("⏸ Mining paused")
+                # the ⏸ marker stays outside the translation, like 💤 for the idle statuses
+                self.gui.status.update("⏸ " + _.t["status"].get("paused", "Mining paused"))
                 self.stop_watching()
                 self._state_change.clear()
                 await self._state_change.wait()
@@ -998,6 +999,7 @@ class Twitch:
             if not user_data or not user_data.get("stream"):
                 return None
             channel = Channel(self, id=user_data["id"], login=login, display_name=user_data.get("displayName"))
+            channel.update_logo(user_data)
             channel._stream = Stream.from_get_stream(channel, user_data)
             return channel
         except Exception as exc:

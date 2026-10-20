@@ -10,7 +10,8 @@
     "no_channel": "Žádné dostupné kanály ke sledování. Čekám na kanál, který bude ONLINE...",
     "no_campaign": "Žádné aktivní kampaně k těžbě dropů. Čekám na aktivní kampaň...",
     "idle": "Nečinnost: {channels}",
-    "idle_watching": "Sledování v nečinnosti: {channel}"
+    "idle_watching": "Sledování v nečinnosti: {channel}",
+    "paused": "Těžba pozastavena"
   },
   "login": {
     "unexpected_content": "Byl vrácen neočekávaný typ obsahu, obvykle kvůli přesměrování. Nemusíte se nejdřív přihlásit k přístupu na internet?",
@@ -25,13 +26,15 @@
       "unavailable": "Prohlížeč pro přihlášení se nepodařilo spustit - zkontrolujte, že jsou nainstalované Chromium, Xvfb, x11vnc a websockify. Zkouším znovu..."
     },
     "browser_login": {
-      "instructions": "Přihlaste se k Twitchi níže. Jde o skutečnou relaci prohlížeče běžící na serveru -- vaše přihlašovací údaje ho nikdy neopustí.",
-      "vps_warning": "Provozujete to na VPS? Twitch to často blokuje svou ochranou proti botům -- spusťte místo toho scripts/tdm_login_helper.py na svém vlastním zařízení (viz README).",
-      "cancel": "Zrušit přihlášení",
       "on_real_display": "Na ploše tohoto počítače se otevřelo okno prohlížeče -- dokončete přihlášení k Twitchi tam.",
-      "device_code_use_instead": "Přihlášení přes prohlížeč nefunguje? Přihlaste se raději kódem",
-      "device_code_prompt": "Otevřete tuto stránku na libovolném zařízení a zadejte kód:",
-      "device_code_back": "Zpět na přihlášení přes prohlížeč"
+      "helper_intro": "TDM běží na serveru, takže se přihlaste ze svého PC: spusťte tam tento příkaz (potřebuje Python 3 a Google Chrome nebo Edge). Otevře se normální okno prohlížeče -- přihlaste se k Twitchi a je hotovo.",
+      "helper_copy": "Kopírovat",
+      "helper_copied": "Zkopírováno",
+      "helper_download": "Nebo si stáhněte skript",
+      "helper_py_hint": "Pokud se „python“ nenajde: ve Windows použijte py, v macOS/Linuxu python3.",
+      "helper_intro_local": "Nejste u tohoto počítače? Spusťte tento příkaz na PC, které právě používáte (potřebuje Python 3 a Google Chrome nebo Edge):",
+      "helper_copy_manual": "Označeno -- stiskněte Ctrl+C",
+      "helper_http_warning": "Tento dashboard není šifrovaný (http) -- příkaz spouštějte jen v domácí síti, nebo použijte https."
     }
   },
   "error": {
@@ -103,7 +106,8 @@
       "view_campaign_drops": "Zobrazit dropy kampaně",
       "minutes_progress": "{current} / {required} minut",
       "time_remaining": "Zbývá: {time}",
-      "view_remaining_drops": "Zobrazit zbývající dropy"
+      "view_remaining_drops": "Zobrazit zbývající dropy",
+      "ignore_campaign_confirm": "Ignorovat kampaň „{campaign}“? Žádný z jejích dropů se už nebude těžit ani vyzvedávat."
     },
     "channels": {
       "name": "Kanály",
@@ -131,6 +135,8 @@
       "ends": "Končí: {time}",
       "no_campaigns": "Zatím nejsou načteny žádné kampaně...",
       "claimed_drops": "vyzvednuto",
+      "sub_only": "🔒 Jen pro předplatitele",
+      "sub_only_title": "Vyžaduje předplatné kanálu — sledováním ho nezískáte",
       "filters": {
         "active": "Aktivní",
         "not_linked": "Nepropojené",
@@ -174,7 +180,9 @@
       "drop_plural": "dropů",
       "drops_left_suffix": "zbývá",
       "drop_few": "dropy",
-      "drops_left_format": "zbývá {count} {drops}"
+      "drops_left_format": "zbývá {count} {drops}",
+      "link_unverified_badge": "NEOVĚŘENÉ PROPOJENÍ",
+      "link_unverified_badge_title": "Stav propojení neznámý - těží se, protože je zapnuté „Těžit neověřená propojení“"
     },
     "settings": {
       "general": {
@@ -236,7 +244,8 @@
         "expires": "Vyprší za 10 min",
         "drops_label": "🎁 Dropy: ",
         "points_label": "💰 Body: ",
-        "clear_confirm": "Vymazat kanál pro oznámení typu {type}?"
+        "clear_confirm": "Vymazat kanál pro oznámení typu {type}?",
+        "health_label": "🩺 Stav: "
       },
       "notifications_header": "Oznámení",
       "push_enabled": "Push oznámení v prohlížeči",
@@ -299,7 +308,9 @@
       "idle_parallel": "Paralelní nečinnost (sledovat všechny kanály současně)",
       "idle_parallel_help": "Při nečinnosti sbírat body kanálu z více kanálů najednou.",
       "preferred_games": "⭐ Preferované hry",
-      "preferred_games_help": "Hry, které se sledují vždy — i bez aktivních kampaní s dropy. Jakmile se objeví kampaň, automaticky se připojí. Nikdy se automaticky neodebírají.",
+      "preferred_games_help": "Hry, které se sledují vždy — i bez aktivních kampaní s dropy. Jakmile se objeví kampaň, automaticky se připojí. Nikdy se automaticky neodebírají. Pořadí určuje konec kampaně (nejdřív se těží hra, jejíž kampaň končí nejdřív), ne pozice v seznamu.",
+      "priority_list_only": "Pouze seznam priorit",
+      "priority_list_only_help": "Když je vypnuto, těží se i jakákoli jiná hra s aktivní kampaní dropů, pokud právě neběží žádná z vašich prioritních ani preferovaných her. Váš seznam má vždy přednost.",
       "webhook_missing": "Není nastavena URL webhooku.",
       "push_blocked": "Oznámení prohlížeče jsou zablokovaná. Povolte je v nastavení prohlížeče (ikona zámku v adresním řádku) a obnovte stránku.",
       "predictions": {
@@ -331,7 +342,11 @@
         "col_min_balance": "Min. zůst.",
         "col_delay": "Prodleva (s)"
       },
-      "campaign_end_notification": "⏰ Kampaň končí za ~{hours} h"
+      "campaign_end_notification": "⏰ Kampaň končí za ~{hours} h",
+      "discord_health_webhook_label": "Webhook pro upozornění na stav:",
+      "discord_health_webhook_help": "Spustí se, když přihlášení k Twitchi čeká 30 a více minut nebo se těžba zasekne, a znovu, když se vše obnoví. Prázdné: použije se webhook pro dropy.",
+      "no_games_found": "Žádné hry nenalezeny",
+      "languages_failed": "Nepodařilo se načíst jazyky"
     },
     "help": {
       "about": "O Twitch Drops Miner",
@@ -392,7 +407,8 @@
       "name": "Fronta chtěných dropů",
       "none": "Žádné chtěné dropy ve frontě...",
       "waiting_for_campaign": "⭐ Čeká na kampaň",
-      "no_campaign": "Bez kampaně"
+      "no_campaign": "Bez kampaně",
+      "fallback": "Záložní"
     },
     "system": {
       "header": "Systém",
@@ -503,7 +519,8 @@
       "badge_earned": "✓ Získáno",
       "badge_earned_title": "Doba sledování dokončena — čeká se na potvrzení od Twitche",
       "badge_claim_now": "⚡ Vyzvednout nyní",
-      "badge_percent_left": "{pct}% · zbývá {mins}min"
+      "badge_percent_left": "{pct}% · zbývá {mins}min",
+      "badge_sub_only": "🔒 Jen pro předplatitele"
     },
     "accounts_manager": {
       "aria_label": "Správa účtů",
@@ -565,6 +582,9 @@
       "restarting_suffix": "⏳ Restartuji... stránka se za chvíli znovu připojí.",
       "error_contacting": "Chyba při kontaktování serveru."
     },
+    "sidebar": {
+      "accounts": "Účty"
+    },
     "main_stats": {
       "drops_today": "Dropy dnes",
       "drops_total": "Dropy celkem",
@@ -607,10 +627,18 @@
       "page_of": "Strana {page} z {total}",
       "points_short": "{points} b.",
       "loading_btn": "↻ Načítání...",
-      "request_failed": "❌ Požadavek selhal: {error}"
+      "request_failed": "❌ Požadavek selhal: {error}",
+      "move_up": "Posunout nahoru",
+      "move_down": "Posunout dolů"
     },
     "console": {
       "toggle_title": "Zobrazit/skrýt výpis logu"
+    },
+    "health": {
+      "login": "⚠️ Přihlášení k Twitchi čeká",
+      "login_resolved": "✅ Přihlášení k Twitchi dokončeno",
+      "stall": "⚠️ Těžba se zasekla — 15+ minut bez sledování",
+      "stall_resolved": "✅ Těžba opět běží"
     }
   }
 }
