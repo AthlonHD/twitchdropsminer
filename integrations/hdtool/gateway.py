@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import asyncio
+import base64
 import contextlib
 import hashlib
 import hmac
@@ -26,6 +27,10 @@ from urllib.parse import urlsplit
 import aiohttp
 from fastapi import FastAPI, HTTPException, Request, WebSocket
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Response, StreamingResponse
+
+# Direct execution by Agent and the isolated tests use the fork's own module.
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+from integrations.hdtool.remote_login import RemoteLoginManager
 
 LOG = logging.getLogger("hdtool.tdm")
 COOKIE = "hdtool_tdm_session"
@@ -240,6 +245,8 @@ def render_dashboard(content: str, user: dict) -> str:
     if not count:
         content = content.replace("<body>", '<body><nav style="display:flex;justify-content:flex-end;padding:12px">' + control + '</nav>', 1)
     style = '<style>#instances-card,#account-tabs{display:none!important}.header-brand-right{gap:10px;flex-wrap:wrap}</style>'
+    web_login = '<div style="margin:12px 0"><a class="btn-primary" href="/portal/twitch-login" style="display:inline-block;padding:10px 16px;text-decoration:none">网页登录 Twitch（免安装 · 试用）</a><p style="margin-top:8px">直接在网页操作服务器浏览器，无需安装 Python。服务器登录可能需要额外验证；遇到不支持的浏览器或验证问题时，可使用下面的本机助手。</p></div>'
+    content = content.replace('<p id="login-helper-intro">', web_login + '<p id="login-helper-intro">', 1)
     return content.replace("</head>", style + "</head>", 1)
 
 
@@ -255,6 +262,21 @@ document.querySelector('#create').onsubmit=async e=>{e.preventDefault();try{awai
 document.querySelector('#password').onsubmit=async e=>{e.preventDefault();try{await api('password',Object.fromEntries(new FormData(e.target)));location.href='/portal/login'}catch(e){msg(e.message)}};
 document.querySelector('#logout').onclick=async()=>{await api('logout',{});location.href='/portal/login'};
 refresh().catch(e=>msg(e.message));
+""")
+
+
+WEB_LOGIN_PAGE = document("""<div class="top"><h1>网页登录 Twitch</h1><a href="/">返回 Dashboard</a></div><p>无需在你的设备安装软件。下方是服务器上为你临时创建的独立浏览器；点击画面、输入账号并完成 Twitch 验证。当前为试用功能，服务器 IP 或浏览器验证可能导致登录失败，此时可使用 Dashboard 中的本机助手。</p><p id="message">正在启动登录画面，请稍候…</p><canvas id="screen" width="1100" height="800" tabindex="0" aria-label="远程 Twitch 登录浏览器" style="width:100%;height:auto;border:1px solid #596078;border-radius:10px;background:white;outline:none;touch-action:none"></canvas><p>点击画面后可输入文字，支持 Tab、Enter、退格和粘贴。单次会话最多 10 分钟；关闭页面会销毁临时浏览器。仅此登录窗口的会话会交给你自己的掉宝实例，不会在页面或日志中展示 Twitch 会话。</p>""", """
+const screen=document.querySelector('#screen'),ctx=screen.getContext('2d'),message=document.querySelector('#message');
+let ws=new WebSocket((location.protocol==='https:'?'wss://':'ws://')+location.host+'/portal/twitch-login/ws');
+ws.binaryType='blob';const send=v=>{if(ws.readyState===1)ws.send(JSON.stringify(v))};
+ws.onmessage=async e=>{if(typeof e.data==='string'){let v=JSON.parse(e.data);message.textContent=v.message||'';if(v.type==='done'){ws.close();setTimeout(()=>location.href='/',800)}}else{let image=await createImageBitmap(e.data);ctx.drawImage(image,0,0,1100,800);image.close()}};
+ws.onclose=()=>{if(!message.textContent.includes('成功'))message.textContent='登录画面已关闭。可以刷新重试，或返回 Dashboard 使用本机助手。'};
+function point(e){let r=screen.getBoundingClientRect();return{x:Math.max(0,Math.min(1100,(e.clientX-r.left)*1100/r.width)),y:Math.max(0,Math.min(800,(e.clientY-r.top)*800/r.height))}}
+screen.onpointerdown=e=>{e.preventDefault();screen.focus();send({type:'down',...point(e)})};screen.onpointerup=e=>{e.preventDefault();send({type:'up',...point(e)})};screen.oncontextmenu=e=>e.preventDefault();
+screen.addEventListener('wheel',e=>{e.preventDefault();send({type:'wheel',...point(e),delta:e.deltaY})},{passive:false});
+screen.onkeydown=e=>{if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==='v')return;e.preventDefault();if(e.ctrlKey||e.metaKey){if(e.key.toLowerCase()==='a')send({type:'key',key:'a',select_all:true});return}if(e.key.length===1)send({type:'text',text:e.key});else if(['Backspace','Tab','Enter','Escape','ArrowLeft','ArrowRight','ArrowUp','ArrowDown','Delete','Home','End'].includes(e.key))send({type:'key',key:e.key})};
+screen.onpaste=e=>{e.preventDefault();send({type:'text',text:e.clipboardData.getData('text').slice(0,2000)})};
+window.addEventListener('pagehide',()=>ws.close());
 """)
 
 
@@ -293,9 +315,10 @@ def helper_source(source: Path) -> str:
     return (code[:start] + replacement + code[end:]).replace('"X-Fleet-Password": password', '"Authorization": "Bearer " + password')
 
 
-def create_app(root: Path, source: Path, engine_factory=Engine) -> FastAPI:
+def create_app(root: Path, source: Path, engine_factory=Engine, remote_factory=RemoteLoginManager) -> FastAPI:
     store = Store(root, source)
     engine = engine_factory(store)
+    remote_logins = remote_factory()
 
     async def warmup():
         for user in list(store.users.values()):
@@ -318,6 +341,7 @@ def create_app(root: Path, source: Path, engine_factory=Engine) -> FastAPI:
                 with contextlib.suppress(asyncio.CancelledError):
                     await task
                 await engine.close()
+                await remote_logins.shutdown()
 
     app = FastAPI(lifespan=lifespan, docs_url=None, redoc_url=None, openapi_url=None)
     app.state.store, app.state.engine = store, engine
@@ -361,6 +385,10 @@ def create_app(root: Path, source: Path, engine_factory=Engine) -> FastAPI:
         if not request.state.user["admin"]:
             return RedirectResponse("/", status_code=302)
         return HTMLResponse(HOME_PAGE)
+
+    @app.get("/portal/twitch-login")
+    async def web_login_page():
+        return HTMLResponse(WEB_LOGIN_PAGE)
 
     @app.post("/portal/api/login")
     async def login(request: Request):
@@ -619,6 +647,61 @@ def create_app(root: Path, source: Path, engine_factory=Engine) -> FastAPI:
             finally:
                 upstream.release()
         return StreamingResponse(stream(), status_code=upstream.status, headers=response_headers)
+
+    @app.websocket("/portal/twitch-login/ws")
+    async def web_login_socket(socket: WebSocket):
+        token = token_of(socket)
+        user = store.user(token)
+        if not user or not same_origin(socket):
+            await socket.close(code=1008)
+            return
+        await socket.accept()
+        browser = None
+        tasks = []
+        try:
+            await backend_json(user, "/api/status")
+            browser = await remote_logins.open(user["id"])
+            await socket.send_json({"type": "status", "message": "请在下方 Twitch 页面完成登录；无需安装 Python。"})
+
+            async def input_loop():
+                while True:
+                    text = await socket.receive_text()
+                    if len(text) > 10_000:
+                        raise ValueError("input too large")
+                    message = json.loads(text)
+                    if not isinstance(message, dict):
+                        raise ValueError("invalid input")
+                    await browser.input(message)
+
+            async def frames():
+                deadline = asyncio.get_running_loop().time() + 600
+                while store.user(token) and asyncio.get_running_loop().time() < deadline:
+                    cookies = await browser.cookies()
+                    if cookies.get("auth-token"):
+                        await backend_json(user, "/api/login/browser/helper-session", {"auth_token": cookies["auth-token"], "unique_id": cookies.get("unique_id", "")})
+                        await socket.send_json({"type": "done", "message": "登录会话已提交成功，正在返回 Dashboard…"})
+                        return
+                    await socket.send_bytes(base64.b64decode(await browser.screenshot()))
+                    await asyncio.sleep(.6)
+                await socket.send_json({"type": "status", "message": "登录会话已过期或账号已停用，请重新登录。"})
+
+            tasks = [asyncio.create_task(f()) for f in (input_loop, frames)]
+            done, _ = await asyncio.wait(tasks, return_when=asyncio.FIRST_COMPLETED)
+            for task in done:
+                task.result()
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            with contextlib.suppress(Exception):
+                await socket.send_json({"type": "error", "message": "网页登录未完成。可能是窗口被关闭、服务器验证或浏览器启动失败；可重试或使用本机助手。"})
+        finally:
+            for task in tasks:
+                task.cancel()
+            await asyncio.gather(*tasks, return_exceptions=True)
+            if browser:
+                await remote_logins.close(user["id"], browser)
+            with contextlib.suppress(Exception):
+                await socket.close()
 
     @app.websocket("/socket.io/")
     async def websocket(socket: WebSocket):

@@ -4,6 +4,8 @@
 >
 > 多人网关、固定中文和页面适配由本 fork 维护；Agent 仅负责启动及退出清理。以下保留原上游 README。
 
+> 登录区新增**免安装网页登录（试用）**：用户在网页中操作服务器临时浏览器；无须本机 Python。真实 Twitch 认证是否通过尚待本人测试，保留本机登录助手作为备用。详见集成文档的限制说明。
+
 # 🌟 Twitch Drops Miner — SimpliAj Edition
 
 <p align="center">

@@ -22,6 +22,7 @@ class FakeEngine:
         self.store = store
         self.backends = {}
         self.settings = {}
+        self.submitted = {}
         self.lock = asyncio.Lock()
 
     def running(self, user):
@@ -59,6 +60,8 @@ class FakeEngine:
                     if request.method == "POST":
                         self.settings[user["id"]] = await request.json()
                     return web.json_response({"games_to_watch": [], "proxy": ""})
+                if request.path == "/api/login/browser/helper-session":
+                    self.submitted[user["id"]] = await request.json()
                 return web.json_response({"user_id": user["id"], "status": user["name"], "paused": False})
 
             app = web.Application()
@@ -81,6 +84,39 @@ class FakeEngine:
             await self.stop(user)
 
 
+class FakeRemoteBrowser:
+    def __init__(self):
+        self.done = False
+        self.closed = False
+
+    async def input(self, message):
+        self.done = message.get("type") == "key"
+
+    async def cookies(self):
+        return {"auth-token": "not-a-real-twitch-token", "unique_id": "test-device"} if self.done else {}
+
+    async def screenshot(self):
+        import base64
+        return base64.b64encode(b"frame").decode()
+
+
+class FakeRemoteManager:
+    def __init__(self):
+        self.instances = {}
+
+    async def open(self, user_id):
+        browser = FakeRemoteBrowser()
+        self.instances[user_id] = browser
+        return browser
+
+    async def close(self, user_id, browser):
+        browser.closed = True
+
+    async def shutdown(self):
+        for browser in self.instances.values():
+            browser.closed = True
+
+
 class GatewayTests(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self):
         self.temp = tempfile.TemporaryDirectory(prefix="hdtool-gateway-test-")
@@ -96,7 +132,7 @@ def ensure_password(base_url, password, prompt=getpass.getpass):
 def submit_session(base_url, password, auth_token, unique_id):
     return {"X-Fleet-Password": password}
 ''', encoding="utf-8")
-        self.app = gateway.create_app(root / "platform", self.source, FakeEngine)
+        self.app = gateway.create_app(root / "platform", self.source, FakeEngine, FakeRemoteManager)
         self.store = self.app.state.store
         with socket.socket() as sock:
             sock.bind(("127.0.0.1", 0))
@@ -247,6 +283,35 @@ def submit_session(base_url, password, auth_token, unique_id):
             self.assertEqual((await r.json())["user_id"], alice["id"])
         async with anonymous.post(self.base + "/portal/api/register", json={"username": "intruder"}) as r:
             self.assertEqual(r.status, 401)
+
+    async def test_no_install_login_is_authenticated_and_submits_only_to_owner(self):
+        alice = await self.create("alice")
+        bob = await self.create("bob")
+        client = await self.client()
+        await self.login(client, "alice")
+        async with client.get(self.base + "/portal/twitch-login") as r:
+            self.assertEqual(r.status, 200)
+            self.assertIn("无需在你的设备安装软件", await r.text())
+        anonymous = await self.client()
+        with self.assertRaises(aiohttp.WSServerHandshakeError):
+            await anonymous.ws_connect(self.base + "/portal/twitch-login/ws")
+        with self.assertRaises(aiohttp.WSServerHandshakeError):
+            await client.ws_connect(self.base + "/portal/twitch-login/ws", headers={"Origin": "https://evil.example"})
+        async with client.ws_connect(self.base + "/portal/twitch-login/ws") as ws:
+            first = await ws.receive_json()
+            self.assertEqual(first["type"], "status")
+            frame = await ws.receive()
+            self.assertEqual(frame.type, aiohttp.WSMsgType.BINARY)
+            await ws.send_json({"type": "key", "key": "Enter"})
+            for _ in range(10):
+                message = await ws.receive(timeout=3)
+                if message.type == aiohttp.WSMsgType.TEXT and json.loads(message.data).get("type") == "done":
+                    break
+            else:
+                self.fail("remote login did not complete")
+        submitted = self.app.state.engine.submitted
+        self.assertIn(alice["id"], submitted)
+        self.assertNotIn(bob["id"], submitted)
 
 
 if __name__ == "__main__":

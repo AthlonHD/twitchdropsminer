@@ -1,6 +1,7 @@
 {
   "name": "hdtool-tdm",
   "contract_version": 1,
+  "optional_features": ["remote_web_login_experimental"],
   "entrypoint": "integrations/hdtool/gateway.py",
   "health_path": "/healthz",
   "health_mode": "multi-user",
