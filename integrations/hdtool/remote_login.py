@@ -31,6 +31,16 @@ class RemoteBrowser:
         self.lock = asyncio.Lock()
         self.started = time.monotonic()
 
+    @staticmethod
+    def launch_arguments(binary, profile, port, environ=None, windows=None):
+        env = os.environ if environ is None else environ
+        windows = os.name == "nt" if windows is None else windows
+        configured = env.get("TDM_WEB_LOGIN_HEADLESS")
+        headless = (not windows and not env.get("DISPLAY")) if configured is None else configured.strip().lower() in {"1", "true", "yes"}
+        return [binary, *(["--headless=new"] if headless else []), "--no-first-run", "--no-default-browser-check", "--lang=zh-CN",
+                "--window-size=1100,800", f"--user-data-dir={profile}", f"--remote-debugging-port={port}",
+                "data:text/html,<p>正在打开 Twitch 登录页面…</p>"]
+
     async def start(self):
         binary = None
         if os.name == "nt":
@@ -50,9 +60,7 @@ class RemoteBrowser:
         with socket.socket() as port_probe:
             port_probe.bind(("127.0.0.1", 0))
             port = port_probe.getsockname()[1]
-        self.process = subprocess.Popen([binary, "--headless=new", "--no-first-run", "--no-default-browser-check", "--lang=zh-CN",
-                                         "--window-size=1100,800", f"--user-data-dir={self.profile}", f"--remote-debugging-port={port}",
-                                         "data:text/html,<p>正在打开 Twitch 登录页面…</p>"],
+        self.process = subprocess.Popen(self.launch_arguments(binary, self.profile, port),
                                         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
                                         creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0)
         self.http = aiohttp.ClientSession(trust_env=False, timeout=aiohttp.ClientTimeout(total=2))

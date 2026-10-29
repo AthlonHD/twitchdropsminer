@@ -442,3 +442,5 @@ This checkout is the AthlonHD fork, branch `hdtool`; `upstream` is SimpliAj. Fol
 Optional no-install login is implemented in integrations/hdtool/remote_login.py with authenticated, same-origin display/input transport. It is experimental: screenshot/input tests do not prove Twitch authentication succeeds. Never request Twitch credentials in chat, log them, or mark the feature verified without a real user completing authentication. Keep the local helper fallback.
 
 Remote login must retry Chrome initial-paint capture failures; diagnostic logs may contain only the stage and exception type, never keyboard input or authentication data.
+
+On Windows Desktop Experience, remote web login defaults to a normal visible browser opened only during an explicit user login. Do not silently reintroduce headless mode or claim this resolves Twitch authentication rejection without user verification.

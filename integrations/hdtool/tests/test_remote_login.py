@@ -12,6 +12,18 @@ class FakeBrowser:
 
 
 class RemoteLoginTests(unittest.IsolatedAsyncioTestCase):
+    def test_windows_remote_login_uses_normal_browser_by_default(self):
+        args = RemoteBrowser.launch_arguments("chrome", "temporary-profile", 12345, {}, windows=True)
+        self.assertFalse(any(arg.startswith("--headless") for arg in args))
+        self.assertIn("--user-data-dir=temporary-profile", args)
+        self.assertFalse(any("user-agent" in arg or "AutomationControlled" in arg for arg in args))
+
+    def test_headless_requires_explicit_choice_on_windows(self):
+        args = RemoteBrowser.launch_arguments("chrome", "temporary-profile", 12345, {"TDM_WEB_LOGIN_HEADLESS": "1"}, windows=True)
+        self.assertIn("--headless=new", args)
+        args = RemoteBrowser.launch_arguments("chrome", "temporary-profile", 12345, {"DISPLAY": ":0"}, windows=False)
+        self.assertNotIn("--headless=new", args)
+
     async def test_initial_chrome_paint_race_does_not_end_login(self):
         browser = RemoteBrowser()
         browser.call = AsyncMock(side_effect=[RuntimeError("no render surface"), {"data": "frame"}])
