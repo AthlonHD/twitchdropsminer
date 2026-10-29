@@ -27,6 +27,7 @@ from urllib.parse import urlsplit
 import aiohttp
 from fastapi import FastAPI, HTTPException, Request, WebSocket
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Response, StreamingResponse
+from starlette.websockets import WebSocketDisconnect
 
 # Direct execution by Agent and the isolated tests use the fork's own module.
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
@@ -658,9 +659,12 @@ def create_app(root: Path, source: Path, engine_factory=Engine, remote_factory=R
         await socket.accept()
         browser = None
         tasks = []
+        stage = "instance"
         try:
             await backend_json(user, "/api/status")
+            stage = "browser-start"
             browser = await remote_logins.open(user["id"])
+            stage = "browser-stream"
             await socket.send_json({"type": "status", "message": "请在下方 Twitch 页面完成登录；无需安装 Python。"})
 
             async def input_loop():
@@ -691,9 +695,12 @@ def create_app(root: Path, source: Path, engine_factory=Engine, remote_factory=R
                 task.result()
         except asyncio.CancelledError:
             raise
-        except Exception:
+        except (WebSocketDisconnect, ConnectionResetError):
+            pass
+        except Exception as error:
+            LOG.warning("[TDM] 网页登录未完成，阶段 %s，异常类型 %s", stage, type(error).__name__)
             with contextlib.suppress(Exception):
-                await socket.send_json({"type": "error", "message": "网页登录未完成。可能是窗口被关闭、服务器验证或浏览器启动失败；可重试或使用本机助手。"})
+                await socket.send_json({"type": "error", "code": type(error).__name__, "stage": stage, "message": "网页登录未完成。可能是窗口被关闭、服务器验证或浏览器启动失败；可重试或使用本机助手。"})
         finally:
             for task in tasks:
                 task.cancel()

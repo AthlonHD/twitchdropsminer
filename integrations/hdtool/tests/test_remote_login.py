@@ -12,6 +12,12 @@ class FakeBrowser:
 
 
 class RemoteLoginTests(unittest.IsolatedAsyncioTestCase):
+    async def test_initial_chrome_paint_race_does_not_end_login(self):
+        browser = RemoteBrowser()
+        browser.call = AsyncMock(side_effect=[RuntimeError("no render surface"), {"data": "frame"}])
+        self.assertEqual(await browser.screenshot(), "frame")
+        self.assertEqual(browser.call.await_count, 2)
+
     async def test_one_browser_per_user_and_global_capacity(self):
         manager = RemoteLoginManager(FakeBrowser)
         alice = await manager.open("alice")

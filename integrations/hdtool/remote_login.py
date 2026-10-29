@@ -84,11 +84,19 @@ class RemoteBrowser:
                 response = await self.ws.receive_json(timeout=10)
                 if response.get("id") == request_id:
                     if "error" in response:
-                        raise RuntimeError("browser command failed")
+                        raise RuntimeError("browser command failed: " + method)
                     return response.get("result", {})
 
     async def screenshot(self):
-        return (await self.call("Page.captureScreenshot", {"format": "jpeg", "quality": 60}))["data"]
+        # Chrome may have no render surface immediately after Page.navigate.
+        # Treat the initial capture error as a short paint race, not a failed login.
+        for attempt in range(10):
+            try:
+                return (await self.call("Page.captureScreenshot", {"format": "jpeg", "quality": 60}))["data"]
+            except RuntimeError:
+                if attempt == 9:
+                    raise
+                await asyncio.sleep(.3)
 
     async def cookies(self):
         result = await self.call("Storage.getCookies")
