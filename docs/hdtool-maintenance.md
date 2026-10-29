@@ -95,3 +95,9 @@ git -C <HDTool目录> status --short
 服务器不弹 Twitch 登录窗口。用户在自己的电脑运行 Dashboard 提供的助手，需要 Python 3 与 Chrome/Edge；普通用户输入管理员创建的用户名，管理员还需平台密码。本人在浏览器登录 Twitch，助手只向该用户的服务器实例发送会话。公网从 HTTPS 反代域名进入 Dashboard 后再复制命令，不能把局域网 IP 命令发给外网用户。
 
 普通用户按当前需求不设密码：知道用户名即可进入对应空间，这不是强身份认证。用户中心无开放注册，管理员账号仍使用密码；这是应用级分离，不是 OS/容器级安全沙箱。
+
+## 手动选择掉宝
+
+默认 `games_to_watch=[]`、`preferred_games=[]`、`priority_list_only=true`、`auto_add_linked=false`，没有选择时不挖任何游戏。库存按钮显示“未选择 / 已选择”，只代表观看列表选择，不冒充已产生掉宝进度。首次点击仅加入该游戏，移除最后一个仍为空；取消选择会记录自动添加排除，手动选回时解除排除。库存显示筛选不改变观看目标。
+
+修复旧版本时不自动覆盖既有用户选择；如用户明确要求重置，先备份其选择字段，通过对应实例 API 清空观看/常驻游戏并关闭自动添加和列表外回退。回归测试为 `node tests/test_inventory_selection.cjs` 与 `python -m unittest tests.test_priority_list_fallback`，同步上游时必须保留空列表语义，不能恢复“空即全选”的库存按钮逻辑。

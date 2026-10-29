@@ -444,3 +444,5 @@ Optional no-install login is implemented in integrations/hdtool/remote_login.py 
 Remote login must retry Chrome initial-paint capture failures; diagnostic logs may contain only the stage and exception type, never keyboard input or authentication data.
 
 On Windows Desktop Experience, remote web login defaults to a normal visible browser opened only during an explicit user login. Do not silently reintroduce headless mode or claim this resolves Twitch authentication rejection without user verification.
+
+Mining selection is opt-in by default: an empty watch list must never render as all games selected or populate other games on the first inventory click. Run node tests/test_inventory_selection.cjs and the priority-list fallback tests after upstream UI merges. Existing selections may only be cleared when the user requests it.

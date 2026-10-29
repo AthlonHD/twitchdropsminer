@@ -1774,17 +1774,13 @@ function renderInventory() {
         // Farm toggle button
         const gameName = campaign.game_name;
         const watchList = state.settings.games_to_watch || [];
-        const watchListEmpty = watchList.length === 0;
-        const inWatchList = !watchListEmpty && watchList.some(g => g.toLowerCase() === gameName.toLowerCase());
-        const farmingActive = watchListEmpty || inWatchList;
+        const farmingActive = watchList.some(g => g.toLowerCase() === gameName.toLowerCase());
 
         const farmToggle = makeElement('button', {
             class: `farm-toggle-btn ${farmingActive ? 'farming' : 'skipped'}`,
-            title: watchListEmpty
-                ? (inv.farm_title_all || 'All games farming (no filter active)')
-                : farmingActive ? (inv.farm_title_skip || 'Click to skip this game') : (inv.farm_title_farm || 'Click to farm this game')
+            title: farmingActive ? (inv.farm_title_skip || 'Click to skip this game') : (inv.farm_title_farm || 'Click to farm this game')
         }, '', el => {
-            el.appendChild(makeElement('span', { class: 'farm-state-label' }, farmingActive ? (inv.farming_label || '⛏ Farming') : (inv.skipped_label || '⊘ Skipped')));
+            el.appendChild(makeElement('span', { class: 'farm-state-label' }, farmingActive ? (inv.farming_label || '✓ Selected') : (inv.not_selected_label || '○ Not selected')));
             el.appendChild(makeElement('span', { class: 'farm-action-label' }, farmingActive ? (inv.skip_action_label || '⊘ Skip') : (inv.farm_action_label || '⛏ Farm')));
         });
 
@@ -1792,14 +1788,12 @@ function renderInventory() {
             e.stopPropagation();
             let current = [...(state.settings.games_to_watch || [])];
             const existingIdx = current.findIndex(g => g.toLowerCase() === gameName.toLowerCase());
-            if (watchListEmpty) {
-                // No filter active — "skip" this game means add all others to the list
-                const allGames = [...new Set(Object.values(state.campaigns).map(c => c.game_name))];
-                current = allGames.filter(g => g.toLowerCase() !== gameName.toLowerCase());
-            } else if (existingIdx >= 0) {
+            if (existingIdx >= 0) {
                 current.splice(existingIdx, 1);
+                setAutoAddExcluded(gameName, true);
             } else {
                 current.push(gameName);
+                setAutoAddExcluded(gameName, false);
             }
             state.settings.games_to_watch = current;
             saveSettings();

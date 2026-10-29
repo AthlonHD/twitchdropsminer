@@ -61,6 +61,18 @@ class TestPriorityListFallback(unittest.TestCase):
         self.settings.priority_list_only = True
         self.assertEqual(self._names(), ["Watched", "Preferred"])
 
+    def test_empty_selection_does_not_select_any_available_campaigns(self):
+        self.settings.priority_list_only = True
+        self.settings.games_to_watch = []
+        self.settings.preferred_games = []
+        self.assertEqual(self._names(), [])
+
+    def test_selecting_one_game_never_enables_all_other_games(self):
+        self.settings.priority_list_only = True
+        self.settings.games_to_watch = ["OtherLate"]
+        self.settings.preferred_games = []
+        self.assertEqual(self._names(), ["OtherLate"])
+
     def test_fallback_appends_other_games_sorted_by_end(self):
         self.settings.priority_list_only = False
         self.assertEqual(self._names(), ["Watched", "Preferred", "OtherSoon", "OtherLate"])
