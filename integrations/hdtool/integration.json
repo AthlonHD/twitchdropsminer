@@ -1,0 +1,12 @@
+{
+  "name": "hdtool-tdm",
+  "contract_version": 1,
+  "entrypoint": "integrations/hdtool/gateway.py",
+  "health_path": "/healthz",
+  "health_mode": "multi-user",
+  "fork": "https://github.com/AthlonHD/twitchdropsminer",
+  "upstream": "https://github.com/SimpliAj/twitchdropsminer",
+  "tested_upstream_commit": "5c4668d",
+  "required_environment": ["TDM_SOURCE_DIR", "TDM_DATA_DIR", "TDM_PORT"],
+  "default_public_port": 8767
+}

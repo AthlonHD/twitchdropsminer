@@ -18,6 +18,17 @@
     "incorrect_twofa_code": "手机2FA令牌双重验证码错误.",
     "email_code_required": "需要电子邮件验证码,查看你的邮箱.",
     "twofa_code_required": "需要手机2FA令牌双重验证.",
+    "browser_login": {
+      "on_real_display": "已在这台电脑打开 Twitch 登录窗口，请在该窗口完成登录。",
+      "helper_intro": "TDM 正在服务器运行。请在你自己的电脑运行下面的命令（需要 Python 3，以及 Chrome 或 Edge）。助手会打开本机浏览器供你登录 Twitch，并将登录会话交给你自己的掉宝实例；无需向管理员提供 Twitch 密码。",
+      "helper_copy": "复制命令",
+      "helper_copied": "已复制",
+      "helper_download": "也可以下载登录助手脚本",
+      "helper_py_hint": "找不到 python 命令时：Windows 可尝试 py，macOS / Linux 可尝试 python3。普通用户在助手中只需填写平台用户名；管理员仍需平台密码。",
+      "helper_intro_local": "不在服务器电脑旁？请在你正在使用的电脑运行下面的命令（需要 Python 3，以及 Chrome 或 Edge）：",
+      "helper_copy_manual": "已选中，请按 Ctrl+C 复制",
+      "helper_http_warning": "当前页面使用 HTTP，登录会话传输未加密。请仅在可信局域网运行，远程使用请从 HTTPS 反代域名打开本页面后再复制命令。"
+    },
     "status": {
       "logged_in": "已登录",
       "logged_out": "未登录",

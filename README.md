@@ -1,3 +1,9 @@
+> **HD Tool 集成 fork**：本仓库是 SimpliAj/twitchdropsminer 的 fork，默认开发/部署分支为 `hdtool`。HD Tool 保持独立仓库，通过进程与版本化协议启动本 fork。
+>
+> [部署与集成协议](integrations/hdtool/README.md) · [双仓库维护及合并上游更新](docs/hdtool-maintenance.md) · [原上游](https://github.com/SimpliAj/twitchdropsminer)
+>
+> 多人网关、固定中文和页面适配由本 fork 维护；Agent 仅负责启动及退出清理。以下保留原上游 README。
+
 # 🌟 Twitch Drops Miner — SimpliAj Edition
 
 <p align="center">

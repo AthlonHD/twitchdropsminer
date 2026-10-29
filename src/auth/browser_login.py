@@ -29,6 +29,7 @@ from datetime import datetime, timedelta, timezone
 from playwright.async_api import async_playwright
 
 from src.auth.plain_chrome import PlainChrome
+from src.config.server_mode import ServerMode
 
 
 logger = logging.getLogger("TwitchDrops")
@@ -116,7 +117,7 @@ class BrowserLoginManager:
         helper ("remote"). Returns the mode."""
         if self._session is not None:
             raise RuntimeError("A browser login session is already in progress")
-        display = _detect_real_display()
+        display = None if ServerMode.from_environment().remote_login else _detect_real_display()
         if display is not None:
             env = None if _IS_WINDOWS else {**os.environ, "DISPLAY": f":{display}"}
             try:

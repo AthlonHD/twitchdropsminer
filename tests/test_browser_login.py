@@ -180,5 +180,20 @@ class TestSweepOrphanedProcesses(unittest.IsolatedAsyncioTestCase):
         mock_release.assert_not_called()
 
 
+class TestRemoteLoginMode(unittest.IsolatedAsyncioTestCase):
+    async def test_remote_login_never_opens_local_browser(self):
+        with (
+            patch.dict("os.environ", {"TDM_REMOTE_LOGIN": "1"}),
+            patch.object(_browser_login_module, "_detect_real_display", return_value=0) as display,
+            patch.object(_browser_login_module, "PlainChrome") as chrome,
+        ):
+            manager = _browser_login_module.BrowserLoginManager()
+            self.assertEqual(await manager.start(), "remote")
+            chrome.assert_not_called()
+            display.assert_not_called()
+            self.assertTrue(manager.in_progress)
+            await manager.stop()
+
+
 if __name__ == "__main__":
     unittest.main()

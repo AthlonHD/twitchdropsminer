@@ -40,3 +40,12 @@ discord_bot/pairings.json
 *.bak
 venv/
 web_backup_*/
+
+# Local setup scratch and private HD Tool/TDM runtime state (never publish).
+/integration-staging/
+/.venv/
+/tdm-platform/
+/dashboard-password.txt
+/dashboard-launcher.pid
+/start-dashboard.ps1
+*.pid

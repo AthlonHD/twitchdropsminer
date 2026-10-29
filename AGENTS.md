@@ -433,3 +433,8 @@ The application uses a web-based interface accessible via browser:
 **NOT supported:**
 
 - Desktop GUI
+
+
+## HD Tool fork maintenance
+
+This checkout is the AthlonHD fork, branch `hdtool`; `upstream` is SimpliAj. Follow `docs/hdtool-maintenance.md` and the contract in `integrations/hdtool/README.md`. Keep fork-only multi-user code and tests under `integrations/hdtool/`; HD Tool owns only the Agent process host and Windows job cleanup. Never copy the gateway back into HD Tool or patch source files during startup. Preserve the two `ServerMode` hooks when merging upstream and run the integration tests. Never commit `tdm-platform`, cookies, password files, `.venv`, or local deployment scratch. Production continues to be started by HdTool.Agent.
